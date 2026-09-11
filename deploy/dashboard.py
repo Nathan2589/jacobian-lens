@@ -31,6 +31,7 @@ PRECISION = os.environ.get("JLENS_PRECISION", "nf4")
 MAX_SEQ_CAP = 512
 TOP_N_CAP = 12
 MAX_TRACKED = 256  # mandatory for mode="embed": the page inlines one rank array per tracked token
+GEN_CAP = 128
 
 EXAMPLES = [
     "Fact: The currency used in the country shaped like a boot is",
@@ -142,6 +143,36 @@ def _load() -> None:
         log("LOAD FAILED\n" + _state["error"])
 
 
+def _generate(context_token_ids: list[int], n_new: int, top_n: int) -> dict:
+    """Greedy-decode ``n_new`` tokens from the exact ids the slice used, and
+    return the continuation plus the top-``top_n`` next-token distribution at
+    the last prompt position. This is what the L63 row is predicting, with
+    probabilities, and unmasked (mask_display hides non-word tokens there)."""
+    import torch
+
+    hf = _model._hf_model
+    ids = torch.tensor([context_token_ids], device=_model.input_device)
+    out = hf.generate(
+        input_ids=ids,
+        attention_mask=torch.ones_like(ids),
+        max_new_tokens=n_new,
+        do_sample=False,
+        pad_token_id=_tokenizer.pad_token_id or _tokenizer.eos_token_id,
+        output_logits=True,
+        return_dict_in_generate=True,
+    )
+    new_ids = out.sequences[0, ids.shape[1] :].tolist()
+    probs = torch.softmax(out.logits[0][0].float(), dim=-1)
+    top = probs.topk(top_n)
+    return {
+        "continuation": _tokenizer.decode(new_ids, skip_special_tokens=False),
+        "next": [
+            {"token": _tokenizer.decode([int(t)], clean_up_tokenization_spaces=False), "p": float(p)}
+            for p, t in zip(top.values.tolist(), top.indices.tolist())
+        ],
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     threading.Thread(target=_load, daemon=True).start()
@@ -186,6 +217,7 @@ def run(req: dict = Body(...)) -> JSONResponse:
     layer_stride = clamp("layer_stride", 2, 1, 8)
     top_n = clamp("top_n", 8, 1, TOP_N_CAP)
     last_n = clamp("last_n_tokens", 0, 0, MAX_SEQ_CAP) or None
+    gen_tokens = clamp("gen_tokens", 32, 0, GEN_CAP)
 
     import torch
 
@@ -218,6 +250,12 @@ def run(req: dict = Body(...)) -> JSONResponse:
                 mode="embed",
             )
             t_render = time.time() - t0
+            t0 = time.time()
+            # Outside compute_slice, so no lens hooks are registered; inside the
+            # lock, since it shares the GPU. Runs on the ids the slice used, so
+            # the continuation follows exactly the prompt the grid shows.
+            output = _generate(data.context_token_ids, gen_tokens, top_n) if gen_tokens else None
+            t_gen = time.time() - t0
         except torch.cuda.OutOfMemoryError:
             torch.cuda.empty_cache()
             return JSONResponse(
@@ -234,10 +272,11 @@ def run(req: dict = Body(...)) -> JSONResponse:
         + (f" (truncated at max_seq_len={max_seq_len})" if used == max_seq_len else "")
         + f" · {data.seq_len} positions x {len(data.layers)} rows"
         + f" · forward+readout {t_compute:.1f}s · render {t_render:.1f}s"
+        + (f" · generate {t_gen:.1f}s" if output else "")
         + f" · page {len(page) / 1e6:.1f} MB"
     )
     log(stats)
-    return JSONResponse({"html": page, "stats": stats})
+    return JSONResponse({"html": page, "stats": stats, "prompt": prompt, "output": output})
 
 
 PAGE = """<!doctype html><meta charset=utf-8><title>J-lens</title>
@@ -266,6 +305,12 @@ button:disabled{opacity:.4;cursor:default}
 #stats{color:#6b727d;font-size:11px;min-height:1.5em}
 #err{white-space:pre-wrap;color:#e08a7a;background:#1a1214;border:1px solid #3d2226;
      border-radius:3px;padding:8px;font-size:11px;display:none}
+#output{display:none;background:#12151a;border:1px solid #262b33;border-radius:3px;padding:8px 10px;
+        white-space:pre-wrap;word-break:break-word}
+#output .ctx{color:#6b727d}
+#output .gen{color:#e6e9ee;background:#1b2531}
+#next{color:#6b727d;font-size:11px;margin-top:6px}
+#next b{color:#cfe0f5;font-weight:600}
 iframe{width:100%;height:78vh;border:1px solid #262b33;border-radius:3px;background:#fff;display:none}
 </style>
 <header><h1>J-LENS</h1><span id=detail>connecting...</span></header>
@@ -277,10 +322,12 @@ iframe{width:100%;height:78vh;border:1px solid #262b33;border-radius:3px;backgro
   <label>layer_stride <input type=number id=layer_stride value=2 min=1 max=8></label>
   <label>top_n <input type=number id=top_n value=8 min=1 max=12></label>
   <label>last_n_tokens <input type=number id=last_n_tokens value=0 min=0 max=512></label>
+  <label>gen_tokens <input type=number id=gen_tokens value=32 min=0 max=128></label>
   <button id=go disabled>run</button>
   <span id=stats></span>
 </div>
 <div id=err></div>
+<div id=output><span class=ctx></span><span class=gen></span><div id=next></div></div>
 <iframe id=out></iframe>
 </main>
 <script>
@@ -295,6 +342,21 @@ EX.forEach(t => {
 // The final row (L63) is the model's own output, not a lens readout: it is the
 // sanity check that the NF4 quantization has not drifted the lens off.
 let busy = false;
+// Greedy continuation, highlighted after the dimmed prompt, then the top next-token
+// probabilities at the last position: the distribution the L63 row is showing top-1 of.
+function showOutput(prompt, o) {
+  const box = $('output');
+  if (!o) { box.style.display = 'none'; return; }
+  box.querySelector('.ctx').textContent = prompt;
+  box.querySelector('.gen').textContent = o.continuation;
+  const next = $('next'); next.textContent = 'next token: ';
+  o.next.forEach((n, i) => {
+    if (i) next.append('  ');
+    const b = document.createElement('b'); b.textContent = JSON.stringify(n.token);
+    next.append(b, ' ' + (100 * n.p).toFixed(1) + '%');
+  });
+  box.style.display = 'block';
+}
 async function poll() {
   let delay = 3000;
   try {
@@ -311,7 +373,7 @@ $('go').onclick = async () => {
   busy = true; $('go').disabled = true; $('err').style.display = 'none';
   $('stats').textContent = 'running...';
   const body = {prompt: $('prompt').value};
-  for (const k of ['max_seq_len','layer_stride','top_n','last_n_tokens'])
+  for (const k of ['max_seq_len','layer_stride','top_n','last_n_tokens','gen_tokens'])
     body[k] = parseInt($(k).value, 10);
   try {
     const r = await fetch('/run', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -322,6 +384,7 @@ $('go').onclick = async () => {
       $('err').style.display = 'block'; $('err').textContent = d.error || ('HTTP ' + r.status);
     } else {
       $('stats').textContent = d.stats;
+      showOutput(d.prompt, d.output);
       $('out').style.display = 'block'; $('out').srcdoc = d.html;
     }
   } catch (e) {

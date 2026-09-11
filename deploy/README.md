@@ -11,10 +11,16 @@ Four scripts, in order:
 | `bootstrap.sh` | instance | installs deps, downloads model and lens, starts the server |
 | `tunnel.sh` | laptop | forwards `localhost:7860` to the instance |
 | `destroy.sh` | laptop | kills the instance. This is the only thing that stops billing |
+| `flood.sh` | laptop | runs `experiments/flood` on the instance and pulls the results back. Optional |
 
 `dashboard.py` is the server: a prompt box that renders jlens' own slice
-visualisation. It binds to `127.0.0.1` on the instance, so it is reachable through
-the tunnel and invisible to the public internet.
+visualisation. Above the slice it shows the model's own output: a greedy
+continuation of `gen_tokens` tokens (default 32, `0` to skip) decoded from the same
+token ids the slice used, and the top-`top_n` next-token probabilities at the last
+prompt position. The L63 row shows the top-1 of that distribution, masked to
+word-like tokens; the panel shows it unmasked, with probabilities. It binds to
+`127.0.0.1` on the instance, so it is reachable through the tunnel and invisible to
+the public internet.
 
 **No model weights are ever downloaded to your laptop.** The 56GB checkpoint and the
 3.3GB lens are fetched by the instance, from the instance. Your laptop only moves
