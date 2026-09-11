@@ -1,0 +1,129 @@
+{"id": "arith-1-0", "family": "arith", "tier": 1, "prompt": "3 + 6 = ", "answer": ["9", "nine"], "intermediates": []}
+{"id": "arith-1-1", "family": "arith", "tier": 1, "prompt": "2 + 4 = ", "answer": ["6", "six"], "intermediates": []}
+{"id": "arith-1-2", "family": "arith", "tier": 1, "prompt": "2 + 5 = ", "answer": ["7", "seven"], "intermediates": []}
+{"id": "arith-1-3", "family": "arith", "tier": 1, "prompt": "5 + 5 = ", "answer": ["10", "ten"], "intermediates": []}
+{"id": "arith-1-4", "family": "arith", "tier": 1, "prompt": "5 + 3 = ", "answer": ["8", "eight"], "intermediates": []}
+{"id": "arith-1-5", "family": "arith", "tier": 1, "prompt": "2 + 5 = ", "answer": ["7", "seven"], "intermediates": []}
+{"id": "arith-2-6", "family": "arith", "tier": 2, "prompt": "2 * 3 = ", "answer": ["6", "six"], "intermediates": []}
+{"id": "arith-2-7", "family": "arith", "tier": 2, "prompt": "3 * 2 = ", "answer": ["6", "six"], "intermediates": []}
+{"id": "arith-2-8", "family": "arith", "tier": 2, "prompt": "4 * 3 = ", "answer": ["12", "twelve"], "intermediates": []}
+{"id": "arith-2-9", "family": "arith", "tier": 2, "prompt": "3 * 2 = ", "answer": ["6", "six"], "intermediates": []}
+{"id": "arith-2-10", "family": "arith", "tier": 2, "prompt": "4 * 2 = ", "answer": ["8", "eight"], "intermediates": []}
+{"id": "arith-2-11", "family": "arith", "tier": 2, "prompt": "3 * 2 = ", "answer": ["6", "six"], "intermediates": []}
+{"id": "arith-3-12", "family": "arith", "tier": 3, "prompt": "3 * 2 - 6 = ", "answer": ["0", "zero"], "intermediates": []}
+{"id": "arith-3-13", "family": "arith", "tier": 3, "prompt": "5 * 2 - 4 = ", "answer": ["6", "six"], "intermediates": []}
+{"id": "arith-3-14", "family": "arith", "tier": 3, "prompt": "5 * 2 - 4 = ", "answer": ["6", "six"], "intermediates": []}
+{"id": "arith-3-15", "family": "arith", "tier": 3, "prompt": "5 * 2 - 5 = ", "answer": ["5", "five"], "intermediates": []}
+{"id": "arith-3-16", "family": "arith", "tier": 3, "prompt": "3 * 3 - 4 = ", "answer": ["5", "five"], "intermediates": []}
+{"id": "arith-3-17", "family": "arith", "tier": 3, "prompt": "5 * 2 - 3 = ", "answer": ["7", "seven"], "intermediates": []}
+{"id": "arith-4-18", "family": "arith", "tier": 4, "prompt": "4^2 - 10 = ", "answer": ["6", "six"], "intermediates": []}
+{"id": "arith-4-19", "family": "arith", "tier": 4, "prompt": "5^2 - 14 = ", "answer": ["11", "eleven"], "intermediates": []}
+{"id": "arith-4-20", "family": "arith", "tier": 4, "prompt": "5^2 - 18 = ", "answer": ["7", "seven"], "intermediates": []}
+{"id": "arith-4-21", "family": "arith", "tier": 4, "prompt": "5^2 - 13 = ", "answer": ["12", "twelve"], "intermediates": []}
+{"id": "arith-4-22", "family": "arith", "tier": 4, "prompt": "4^2 - 14 = ", "answer": ["2", "two"], "intermediates": []}
+{"id": "arith-4-23", "family": "arith", "tier": 4, "prompt": "5^2 - 17 = ", "answer": ["8", "eight"], "intermediates": []}
+{"id": "arith-5-24", "family": "arith", "tier": 5, "prompt": "(28 * 24) mod 6 = ", "answer": ["0", "zero"], "intermediates": [["6"]]}
+{"id": "arith-5-25", "family": "arith", "tier": 5, "prompt": "(27 * 19) mod 9 = ", "answer": ["0", "zero"], "intermediates": [["5"]]}
+{"id": "arith-5-26", "family": "arith", "tier": 5, "prompt": "(25 * 17) mod 8 = ", "answer": ["1", "one"], "intermediates": [["4"]]}
+{"id": "arith-5-27", "family": "arith", "tier": 5, "prompt": "(29 * 23) mod 6 = ", "answer": ["1", "one"], "intermediates": [["6"]]}
+{"id": "arith-5-28", "family": "arith", "tier": 5, "prompt": "(26 * 28) mod 6 = ", "answer": ["2", "two"], "intermediates": [["7"]]}
+{"id": "arith-5-29", "family": "arith", "tier": 5, "prompt": "(17 * 28) mod 9 = ", "answer": ["8", "eight"], "intermediates": [["4"]]}
+{"id": "arith-6-30", "family": "arith", "tier": 6, "prompt": "(301 * 362) mod 6 = ", "answer": ["2", "two"], "intermediates": [["1"]]}
+{"id": "arith-6-31", "family": "arith", "tier": 6, "prompt": "(352 * 134) mod 8 = ", "answer": ["0", "zero"], "intermediates": [["4"]]}
+{"id": "arith-6-32", "family": "arith", "tier": 6, "prompt": "(313 * 199) mod 7 = ", "answer": ["1", "one"], "intermediates": [["6"]]}
+{"id": "arith-6-33", "family": "arith", "tier": 6, "prompt": "(369 * 228) mod 6 = ", "answer": ["0", "zero"], "intermediates": [["8"]]}
+{"id": "arith-6-34", "family": "arith", "tier": 6, "prompt": "(214 * 388) mod 7 = ", "answer": ["5", "five"], "intermediates": [["8"]]}
+{"id": "arith-6-35", "family": "arith", "tier": 6, "prompt": "(319 * 375) mod 8 = ", "answer": ["1", "one"], "intermediates": [["1"]]}
+{"id": "arith-7-36", "family": "arith", "tier": 7, "prompt": "(3378 * 473 + 570) mod 8 = ", "answer": ["4", "four"], "intermediates": [["1"]]}
+{"id": "arith-7-37", "family": "arith", "tier": 7, "prompt": "(3712 * 673 + 723) mod 6 = ", "answer": ["1", "one"], "intermediates": [["2"]]}
+{"id": "arith-7-38", "family": "arith", "tier": 7, "prompt": "(2583 * 914 + 977) mod 7 = ", "answer": ["4", "four"], "intermediates": [["2"]]}
+{"id": "arith-7-39", "family": "arith", "tier": 7, "prompt": "(3136 * 908 + 674) mod 7 = ", "answer": ["2", "two"], "intermediates": [["2"]]}
+{"id": "arith-7-40", "family": "arith", "tier": 7, "prompt": "(2757 * 169 + 592) mod 8 = ", "answer": ["5", "five"], "intermediates": [["4"]]}
+{"id": "arith-7-41", "family": "arith", "tier": 7, "prompt": "(3346 * 679 + 304) mod 9 = ", "answer": ["8", "eight"], "intermediates": [["2"]]}
+{"id": "nth-letter-1-42", "family": "nth-letter", "tier": 1, "prompt": "The letter at position 2 of the word \"cat\" is \"", "answer": ["a"], "intermediates": []}
+{"id": "count-letter-1-43", "family": "count-letter", "tier": 1, "prompt": "The number of times the letter \"t\" appears in the word \"cat\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-1-44", "family": "nth-letter", "tier": 1, "prompt": "The letter at position 2 of the word \"dog\" is \"", "answer": ["o"], "intermediates": []}
+{"id": "count-letter-1-45", "family": "count-letter", "tier": 1, "prompt": "The number of times the letter \"g\" appears in the word \"dog\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-1-46", "family": "nth-letter", "tier": 1, "prompt": "The letter at position 2 of the word \"sun\" is \"", "answer": ["u"], "intermediates": []}
+{"id": "count-letter-1-47", "family": "count-letter", "tier": 1, "prompt": "The number of times the letter \"n\" appears in the word \"sun\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-1-48", "family": "nth-letter", "tier": 1, "prompt": "The letter at position 2 of the word \"map\" is \"", "answer": ["a"], "intermediates": []}
+{"id": "count-letter-1-49", "family": "count-letter", "tier": 1, "prompt": "The number of times the letter \"p\" appears in the word \"map\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-1-50", "family": "nth-letter", "tier": 1, "prompt": "The letter at position 2 of the word \"pen\" is \"", "answer": ["e"], "intermediates": []}
+{"id": "count-letter-1-51", "family": "count-letter", "tier": 1, "prompt": "The number of times the letter \"p\" appears in the word \"pen\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-1-52", "family": "nth-letter", "tier": 1, "prompt": "The letter at position 2 of the word \"cup\" is \"", "answer": ["u"], "intermediates": []}
+{"id": "count-letter-1-53", "family": "count-letter", "tier": 1, "prompt": "The number of times the letter \"p\" appears in the word \"cup\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-2-54", "family": "nth-letter", "tier": 2, "prompt": "The letter at position 4 of the word \"planet\" is \"", "answer": ["n"], "intermediates": []}
+{"id": "count-letter-2-55", "family": "count-letter", "tier": 2, "prompt": "The number of times the letter \"l\" appears in the word \"planet\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-2-56", "family": "nth-letter", "tier": 2, "prompt": "The letter at position 4 of the word \"garden\" is \"", "answer": ["d"], "intermediates": []}
+{"id": "count-letter-2-57", "family": "count-letter", "tier": 2, "prompt": "The number of times the letter \"e\" appears in the word \"garden\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-2-58", "family": "nth-letter", "tier": 2, "prompt": "The letter at position 4 of the word \"silver\" is \"", "answer": ["v"], "intermediates": []}
+{"id": "count-letter-2-59", "family": "count-letter", "tier": 2, "prompt": "The number of times the letter \"e\" appears in the word \"silver\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-2-60", "family": "nth-letter", "tier": 2, "prompt": "The letter at position 4 of the word \"window\" is \"", "answer": ["d"], "intermediates": []}
+{"id": "count-letter-2-61", "family": "count-letter", "tier": 2, "prompt": "The number of times the letter \"w\" appears in the word \"window\" is", "answer": ["2", "two"], "intermediates": []}
+{"id": "nth-letter-2-62", "family": "nth-letter", "tier": 2, "prompt": "The letter at position 4 of the word \"bottle\" is \"", "answer": ["t"], "intermediates": []}
+{"id": "count-letter-2-63", "family": "count-letter", "tier": 2, "prompt": "The number of times the letter \"t\" appears in the word \"bottle\" is", "answer": ["2", "two"], "intermediates": []}
+{"id": "nth-letter-2-64", "family": "nth-letter", "tier": 2, "prompt": "The letter at position 4 of the word \"pillow\" is \"", "answer": ["l"], "intermediates": []}
+{"id": "count-letter-2-65", "family": "count-letter", "tier": 2, "prompt": "The number of times the letter \"l\" appears in the word \"pillow\" is", "answer": ["2", "two"], "intermediates": []}
+{"id": "nth-letter-3-66", "family": "nth-letter", "tier": 3, "prompt": "The letter at position 6 of the word \"mountain\" is \"", "answer": ["a"], "intermediates": []}
+{"id": "count-letter-3-67", "family": "count-letter", "tier": 3, "prompt": "The number of times the letter \"n\" appears in the word \"mountain\" is", "answer": ["2", "two"], "intermediates": []}
+{"id": "nth-letter-3-68", "family": "nth-letter", "tier": 3, "prompt": "The letter at position 6 of the word \"elephant\" is \"", "answer": ["a"], "intermediates": []}
+{"id": "count-letter-3-69", "family": "count-letter", "tier": 3, "prompt": "The number of times the letter \"e\" appears in the word \"elephant\" is", "answer": ["2", "two"], "intermediates": []}
+{"id": "nth-letter-3-70", "family": "nth-letter", "tier": 3, "prompt": "The letter at position 6 of the word \"keyboard\" is \"", "answer": ["a"], "intermediates": []}
+{"id": "count-letter-3-71", "family": "count-letter", "tier": 3, "prompt": "The number of times the letter \"e\" appears in the word \"keyboard\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-3-72", "family": "nth-letter", "tier": 3, "prompt": "The letter at position 6 of the word \"umbrella\" is \"", "answer": ["l"], "intermediates": []}
+{"id": "count-letter-3-73", "family": "count-letter", "tier": 3, "prompt": "The number of times the letter \"l\" appears in the word \"umbrella\" is", "answer": ["2", "two"], "intermediates": []}
+{"id": "nth-letter-3-74", "family": "nth-letter", "tier": 3, "prompt": "The letter at position 6 of the word \"hospital\" is \"", "answer": ["t"], "intermediates": []}
+{"id": "count-letter-3-75", "family": "count-letter", "tier": 3, "prompt": "The number of times the letter \"l\" appears in the word \"hospital\" is", "answer": ["1", "one"], "intermediates": []}
+{"id": "nth-letter-3-76", "family": "nth-letter", "tier": 3, "prompt": "The letter at position 6 of the word \"notebook\" is \"", "answer": ["o"], "intermediates": []}
+{"id": "count-letter-3-77", "family": "count-letter", "tier": 3, "prompt": "The number of times the letter \"o\" appears in the word \"notebook\" is", "answer": ["3", "three"], "intermediates": []}
+{"id": "nth-letter-4-78", "family": "nth-letter", "tier": 4, "prompt": "The letter at position 9 of the word \"independence\" is \"", "answer": ["e"], "intermediates": []}
+{"id": "count-letter-4-79", "family": "count-letter", "tier": 4, "prompt": "The number of times the letter \"e\" appears in the word \"independence\" is", "answer": ["4", "four"], "intermediates": []}
+{"id": "nth-letter-4-80", "family": "nth-letter", "tier": 4, "prompt": "The letter at position 9 of the word \"photosynthesis\" is \"", "answer": ["t"], "intermediates": []}
+{"id": "count-letter-4-81", "family": "count-letter", "tier": 4, "prompt": "The number of times the letter \"s\" appears in the word \"photosynthesis\" is", "answer": ["3", "three"], "intermediates": []}
+{"id": "nth-letter-4-82", "family": "nth-letter", "tier": 4, "prompt": "The letter at position 9 of the word \"refrigerator\" is \"", "answer": ["a"], "intermediates": []}
+{"id": "count-letter-4-83", "family": "count-letter", "tier": 4, "prompt": "The number of times the letter \"r\" appears in the word \"refrigerator\" is", "answer": ["4", "four"], "intermediates": []}
+{"id": "nth-letter-4-84", "family": "nth-letter", "tier": 4, "prompt": "The letter at position 9 of the word \"encyclopedia\" is \"", "answer": ["e"], "intermediates": []}
+{"id": "count-letter-4-85", "family": "count-letter", "tier": 4, "prompt": "The number of times the letter \"e\" appears in the word \"encyclopedia\" is", "answer": ["2", "two"], "intermediates": []}
+{"id": "nth-letter-4-86", "family": "nth-letter", "tier": 4, "prompt": "The letter at position 9 of the word \"thermodynamics\" is \"", "answer": ["n"], "intermediates": []}
+{"id": "count-letter-4-87", "family": "count-letter", "tier": 4, "prompt": "The number of times the letter \"m\" appears in the word \"thermodynamics\" is", "answer": ["2", "two"], "intermediates": []}
+{"id": "nth-letter-4-88", "family": "nth-letter", "tier": 4, "prompt": "The letter at position 9 of the word \"archaeological\" is \"", "answer": ["o"], "intermediates": []}
+{"id": "count-letter-4-89", "family": "count-letter", "tier": 4, "prompt": "The number of times the letter \"a\" appears in the word \"archaeological\" is", "answer": ["3", "three"], "intermediates": []}
+{"id": "anagram-1-90", "family": "anagram", "tier": 1, "prompt": "The English word made by unscrambling the letters \"atc\" is \"", "answer": ["cat"], "intermediates": []}
+{"id": "anagram-1-91", "family": "anagram", "tier": 1, "prompt": "The English word made by unscrambling the letters \"god\" is \"", "answer": ["dog"], "intermediates": []}
+{"id": "anagram-1-92", "family": "anagram", "tier": 1, "prompt": "The English word made by unscrambling the letters \"nus\" is \"", "answer": ["sun"], "intermediates": []}
+{"id": "anagram-2-93", "family": "anagram", "tier": 2, "prompt": "The English word made by unscrambling the letters \"tsra\" is \"", "answer": ["star"], "intermediates": []}
+{"id": "anagram-2-94", "family": "anagram", "tier": 2, "prompt": "The English word made by unscrambling the letters \"reet\" is \"", "answer": ["tree"], "intermediates": []}
+{"id": "anagram-2-95", "family": "anagram", "tier": 2, "prompt": "The English word made by unscrambling the letters \"mikl\" is \"", "answer": ["milk"], "intermediates": []}
+{"id": "anagram-3-96", "family": "anagram", "tier": 3, "prompt": "The English word made by unscrambling the letters \"oshue\" is \"", "answer": ["house"], "intermediates": []}
+{"id": "anagram-3-97", "family": "anagram", "tier": 3, "prompt": "The English word made by unscrambling the letters \"bdrae\" is \"", "answer": ["bread"], "intermediates": []}
+{"id": "anagram-3-98", "family": "anagram", "tier": 3, "prompt": "The English word made by unscrambling the letters \"tpaln\" is \"", "answer": ["plant"], "intermediates": []}
+{"id": "anagram-4-99", "family": "anagram", "tier": 4, "prompt": "The English word made by unscrambling the letters \"levsri\" is \"", "answer": ["silver"], "intermediates": []}
+{"id": "anagram-4-100", "family": "anagram", "tier": 4, "prompt": "The English word made by unscrambling the letters \"egdrna\" is \"", "answer": ["garden"], "intermediates": []}
+{"id": "anagram-4-101", "family": "anagram", "tier": 4, "prompt": "The English word made by unscrambling the letters \"wionwd\" is \"", "answer": ["window"], "intermediates": []}
+{"id": "anagram-5-102", "family": "anagram", "tier": 5, "prompt": "The English word made by unscrambling the letters \"khneict\" is \"", "answer": ["kitchen"], "intermediates": []}
+{"id": "anagram-5-103", "family": "anagram", "tier": 5, "prompt": "The English word made by unscrambling the letters \"mrgnoin\" is \"", "answer": ["morning"], "intermediates": []}
+{"id": "anagram-5-104", "family": "anagram", "tier": 5, "prompt": "The English word made by unscrambling the letters \"pritceu\" is \"", "answer": ["picture"], "intermediates": []}
+{"id": "multihop-1-105", "family": "multihop", "tier": 1, "prompt": "Fact: The capital of France is", "answer": ["Paris"], "intermediates": []}
+{"id": "multihop-1-106", "family": "multihop", "tier": 1, "prompt": "Fact: The largest planet in the Solar System is", "answer": ["Jupiter"], "intermediates": []}
+{"id": "multihop-1-107", "family": "multihop", "tier": 1, "prompt": "Fact: The currency of Japan is the", "answer": ["yen"], "intermediates": []}
+{"id": "multihop-1-108", "family": "multihop", "tier": 1, "prompt": "Fact: The color of a ripe banana is", "answer": ["yellow"], "intermediates": []}
+{"id": "multihop-1-109", "family": "multihop", "tier": 1, "prompt": "Fact: The author of Hamlet is William", "answer": ["Shakespeare"], "intermediates": []}
+{"id": "multihop-1-110", "family": "multihop", "tier": 1, "prompt": "Fact: The continent that contains Egypt is", "answer": ["Africa"], "intermediates": []}
+{"id": "multihop-2-111", "family": "multihop", "tier": 2, "prompt": "Fact: The currency used in the country shaped like a boot is the", "answer": ["euro"], "intermediates": [["Italy"]]}
+{"id": "multihop-2-112", "family": "multihop", "tier": 2, "prompt": "Fact: The color of the planet fourth from the Sun is", "answer": ["red"], "intermediates": [["Mars"]]}
+{"id": "multihop-2-113", "family": "multihop", "tier": 2, "prompt": "Fact: The number of legs on the animal that spins webs is", "answer": ["eight", "8"], "intermediates": [["spider"]]}
+{"id": "multihop-2-114", "family": "multihop", "tier": 2, "prompt": "Fact: The capital of the country whose flag is a red circle on white is", "answer": ["Tokyo"], "intermediates": [["Japan"]]}
+{"id": "multihop-2-115", "family": "multihop", "tier": 2, "prompt": "Fact: The continent containing the country where the pyramids of Giza stand is", "answer": ["Africa"], "intermediates": [["Egypt"]]}
+{"id": "multihop-2-116", "family": "multihop", "tier": 2, "prompt": "Fact: The language spoken in the country where the Rio Carnival is held is", "answer": ["Portuguese"], "intermediates": [["Brazil"]]}
+{"id": "multihop-3-117", "family": "multihop", "tier": 3, "prompt": "Fact: The currency of the country whose capital is the city with the Eiffel Tower is the", "answer": ["euro"], "intermediates": [["Paris"], ["France"]]}
+{"id": "multihop-3-118", "family": "multihop", "tier": 3, "prompt": "Fact: The continent of the country whose currency is the yen is", "answer": ["Asia"], "intermediates": [["Japan"]]}
+{"id": "multihop-3-119", "family": "multihop", "tier": 3, "prompt": "Fact: The official language of the country whose largest city is Sydney is", "answer": ["English"], "intermediates": [["Australia"]]}
+{"id": "multihop-3-120", "family": "multihop", "tier": 3, "prompt": "Fact: The ocean on the west coast of the country whose capital is Ottawa is the", "answer": ["Pacific"], "intermediates": [["Canada"]]}
+{"id": "multihop-3-121", "family": "multihop", "tier": 3, "prompt": "Fact: The currency of the country whose capital is the city with the Parthenon is the", "answer": ["euro"], "intermediates": [["Athens"], ["Greece"]]}
+{"id": "multihop-3-122", "family": "multihop", "tier": 3, "prompt": "Fact: The color of the star on the flag of the country whose largest city is Ho Chi Minh City is", "answer": ["yellow"], "intermediates": [["Vietnam"]]}
+{"id": "multihop-4-123", "family": "multihop", "tier": 4, "prompt": "Fact: The first letter of the capital of the country whose national animal is the kangaroo is", "answer": ["C"], "intermediates": [["Australia"], ["Canberra"]]}
+{"id": "multihop-4-124", "family": "multihop", "tier": 4, "prompt": "Fact: The number of letters in the name of the capital of the country shaped like a boot is", "answer": ["four", "4"], "intermediates": [["Italy"], ["Rome"]]}
+{"id": "multihop-4-125", "family": "multihop", "tier": 4, "prompt": "Fact: The last letter of the currency of the country where the Colosseum stands is", "answer": ["o"], "intermediates": [["Italy"], ["euro"]]}
+{"id": "multihop-4-126", "family": "multihop", "tier": 4, "prompt": "Fact: The capital of the country directly south of the country whose capital is Ottawa is", "answer": ["Washington"], "intermediates": [["Canada"], ["United", "America"]]}
+{"id": "multihop-4-127", "family": "multihop", "tier": 4, "prompt": "Fact: The number of letters in the currency of the country whose capital is the city with the Parthenon is", "answer": ["four", "4"], "intermediates": [["Athens"], ["Greece"], ["euro"]]}
+{"id": "multihop-4-128", "family": "multihop", "tier": 4, "prompt": "Fact: The first letter of the largest city of the country whose capital is Canberra is", "answer": ["S"], "intermediates": [["Australia"], ["Sydney"]]}
