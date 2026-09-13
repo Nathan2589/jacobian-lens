@@ -11,7 +11,8 @@ Four scripts, in order:
 | `bootstrap.sh` | instance | installs deps, downloads model and lens, starts the server |
 | `tunnel.sh` | laptop | forwards `localhost:7860` to the instance |
 | `destroy.sh` | laptop | kills the instance. This is the only thing that stops billing |
-| `flood.sh` | laptop | runs `experiments/flood` on the instance and pulls the results back. Optional |
+| `flood.sh` | laptop | runs `experiments/flood` on the instance headless and pulls the results back. Optional |
+| `apply.sh` | laptop | copies the local `deploy/`, `experiments/`, `jlens/` to the instance and restarts the dashboard. `--pull` does a git pull there instead |
 
 `dashboard.py` is the server: a prompt box that renders jlens' own slice
 visualisation. Above the slice it shows the model's own output: a greedy
@@ -119,6 +120,39 @@ JLENS_PRECISION=int8 bash /workspace/jacobian-lens/deploy/bootstrap.sh
 
 It refuses to start if the card is too small for the precision you asked for, before
 downloading anything.
+
+## Running the flood suite from the dashboard
+
+The `FLOOD SUITE` section at the bottom of the page runs `experiments/flood` **inside
+the dashboard process**, reusing the model that is already loaded. There is no second
+copy of the weights, and the page stays usable: the run takes the slice lock one item
+at a time, so a `/run` slice interleaves between items instead of waiting for all 129.
+
+Set `band_lo`/`band_hi` (clamped to the lens's fitted layers), `positions` (the last N
+prompt positions to read out, 1-8) and `gen` (greedy tokens for correctness, 1-32), then
+press `start flood`. Rows stream in over server-sent events and the three visuals fill in
+as each item finishes:
+
+| visual | rows | columns | colour |
+|---|---|---|---|
+| accuracy by tier | one line per family | tier | the family's own colour |
+| answer rank in the band, last position | items, in the order they ran | the band's fitted layers | `log10(rank+1)`, dark = rank 0 |
+| when the answer becomes readable | the same items | the read positions, earliest to last | same scale: this is the `lead` picture |
+
+Hover any cell for the item id, the layer or position, the rank and the continuation.
+A hatched row is one whose rank is meaningless (`band_scored: false`, or an answer the
+tokenizer does not encode as a single token); the marker on the right edge of the middle
+visual is green for correct, amber for answer-later, red for wrong. The left rail colours
+each row by family, because `items.jsonl` interleaves `nth-letter` with `count-letter`.
+
+The full per-layer records go to `JLENS_FLOOD_OUT` (default `/workspace/flood-results.jsonl`),
+rewritten at the start of every run. Download them with the `results.jsonl` link next to
+the button, or `curl localhost:7860/flood/results.jsonl`, then run
+`python experiments/flood/analyze.py <file>` on the laptop.
+
+`flood.sh` is still the headless alternative: it stops the dashboard, runs `run.py` over
+SSH, pulls the results back and analyzes them. Use it for an unattended sweep; use the
+page when you want to watch the tier curves form.
 
 ## Cost
 

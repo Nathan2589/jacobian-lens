@@ -20,6 +20,21 @@ def num(n: int) -> list[str]:
     return [str(n)] + ([WORD[n]] if n < len(WORD) else [])
 
 
+def band_scored(answer: list[str]) -> bool:
+    """Single letters never load in the workspace band even when correct, so
+    band-rank metrics are meaningless for them."""
+    return not all(len(a) == 1 and a.isalpha() for a in answer)
+
+
+# Two-shot prefixes so the token right after the prompt is the answer itself and
+# the model does not write intermediate work. Second element: the shot
+# expressions, which an item must not reproduce.
+SHOTS = {
+    "plain": ("2 + 3 = 5\n4 * 2 = 8\n", {"2 + 3", "4 * 2"}),
+    "mod": ("(3 * 4) mod 5 = 2\n(6 * 7) mod 4 = 2\n", {"(3 * 4) mod 5", "(6 * 7) mod 4"}),
+}
+
+
 def arith() -> list[dict]:
     """Tiers 1-4 mirror the paper's directed-modulation tiers. 5-7 force a
     multi-digit product to be held covertly, with a mod so the answer stays a
@@ -28,9 +43,9 @@ def arith() -> list[dict]:
     out = []
     specs = {
         1: lambda: (lambda a, b: (f"{a} + {b}", a + b))(rng.randint(2, 6), rng.randint(2, 6)),
-        2: lambda: (lambda a, b: (f"{a} * {b}", a * b))(rng.randint(2, 4), rng.randint(2, 3)),
+        2: lambda: (lambda a, b: (f"{a} * {b}", a * b))(rng.randint(2, 6), rng.randint(2, 6)),
         3: lambda: (lambda a, b, c: (f"{a} * {b} - {c}", a * b - c))(
-            rng.randint(3, 5), rng.randint(2, 3), rng.randint(1, 6)
+            rng.randint(3, 7), rng.randint(2, 4), rng.randint(1, 9)
         ),
         4: lambda: (lambda a, b: (f"{a}^2 - {b}", a * a - b))(rng.randint(3, 5), rng.randint(10, 20)),
         5: lambda: (lambda a, b, m: (f"({a} * {b}) mod {m}", (a * b) % m))(
@@ -44,10 +59,13 @@ def arith() -> list[dict]:
         ),
     }
     for tier, make in specs.items():
+        prefix, shot_exprs = SHOTS["mod" if tier >= 5 else "plain"]
+        seen: set[str] = set()
         for i in range(6):
             expr, ans = make()
-            while ans < 0 or ans > 12:
+            while ans < 0 or ans > 12 or expr in seen or expr in shot_exprs:
                 expr, ans = make()
+            seen.add(expr)
             inter = []
             if tier in (5, 6, 7):  # the covert product, first digit only is nameable
                 a, b = [int(x) for x in expr.strip("(").split(")")[0].replace("+", "*").split("*")[:2]]
@@ -56,7 +74,7 @@ def arith() -> list[dict]:
                 dict(
                     family="arith",
                     tier=tier,
-                    prompt=f"{expr} = ",
+                    prompt=f"{prefix}{expr} = ",
                     answer=num(ans),
                     intermediates=inter,
                 )
@@ -73,6 +91,10 @@ def letters() -> list[dict]:
         3: ["mountain", "elephant", "keyboard", "umbrella", "hospital", "notebook"],
         4: ["independence", "photosynthesis", "refrigerator", "encyclopedia", "thermodynamics", "archaeological"],
     }
+    shots = (
+        'The number of times the letter "a" appears in the word "banana" is 3.\n'
+        'The number of times the letter "e" appears in the word "tree" is 2.\n'
+    )
     out = []
     for tier, ws in words.items():
         for w in ws:
@@ -91,7 +113,7 @@ def letters() -> list[dict]:
                 dict(
                     family="count-letter",
                     tier=tier,
-                    prompt=f'The number of times the letter "{ch}" appears in the word "{w}" is',
+                    prompt=f'{shots}The number of times the letter "{ch}" appears in the word "{w}" is ',
                     answer=num(w.count(ch)),
                     intermediates=[],
                 )
@@ -173,5 +195,5 @@ def multihop() -> list[dict]:
 if __name__ == "__main__":
     items = arith() + letters() + anagram() + multihop()
     for n, it in enumerate(items):
-        it = {"id": f"{it['family']}-{it['tier']}-{n}", **it}
+        it = {"id": f"{it['family']}-{it['tier']}-{n}", **it, "band_scored": band_scored(it["answer"])}
         print(json.dumps(it, ensure_ascii=False))

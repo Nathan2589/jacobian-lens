@@ -12,18 +12,30 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import Body, FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    StreamingResponse,
+)
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO, "experiments", "flood"))
+from run import measure, wordlike_mask  # noqa: E402 - needs the sys.path line above
 
 MODEL_ID = os.environ.get("JLENS_MODEL_ID", "Qwen/Qwen3.8-27B")
 LENS_REPO = os.environ.get("JLENS_LENS_REPO", "eyes-ml/Qwen3.8-27B_jacobian-lens")
 LENS_FILE = os.environ.get("JLENS_LENS_FILE", "Qwen3.8-27B_jacobian_lens.pt")
 PRECISION = os.environ.get("JLENS_PRECISION", "nf4")
+FLOOD_ITEMS = os.path.join(REPO, "experiments", "flood", "items.jsonl")
+FLOOD_OUT = os.environ.get("JLENS_FLOOD_OUT", "/workspace/flood-results.jsonl")
 
 # Hard caps. The page offers these as defaults; the server re-clamps because the
 # form is trivially editable and a 512-token x stride-1 slice is a much bigger
@@ -44,6 +56,12 @@ _lock = threading.Lock()  # jlens registers hooks on the shared blocks: one slic
 _state: dict = {"status": "loading", "detail": "starting", "error": None}
 _model = _lens = _tokenizer = None
 
+# The flood suite runs in-process so it reuses the loaded model, and takes _lock
+# per item so /run can still interleave between items.
+_flood: dict = {"running": False, "total": 0, "results": [], "error": None, "params": {}}
+_flood_cv = threading.Condition()  # notified after every appended record and at the end
+_flood_mask = None  # ~250k decodes; computed once, reused by every run
+
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -55,10 +73,40 @@ def _load() -> None:
     global _model, _lens, _tokenizer
     try:
         import torch
-        import transformers
 
         import jlens
         import jlens.vis as jvis
+
+        if os.environ.get("JLENS_TINY") == "1":
+            # CPU smoke test: the toy decoder from tests/, fitted the way run.py
+            # --tiny does. Numbers mean nothing; the routes are exercised for real.
+            sys.path.insert(0, os.path.join(REPO, "tests"))
+            from tiny import TinyDecoder
+
+            from jlens.fitting import fit
+
+            model = TinyDecoder(n_layers=4, d_model=8)
+            lens = fit(
+                model,
+                ["abcdefghij " * 5, "klmnopqrst " * 5],
+                source_layers=[0, 1, 2],
+                dim_batch=4,
+                max_seq_len=64,
+            )
+            _tokenizer = model.tokenizer
+            try:
+                jvis._template("embed")
+            except Exception as exc:  # noqa: BLE001 - non-fatal, retried per request
+                log(f"WARNING: d3 prefetch failed ({exc}); /run retries before computing")
+            _model, _lens = model, lens
+            _state.update(
+                status="ready",
+                detail=f"TINY · {model.n_layers} layers · lens {len(lens.source_layers)} fitted layers",
+            )
+            log("ready (tiny)")
+            return
+
+        import transformers
 
         _state["detail"] = f"loading {MODEL_ID} ({PRECISION})"
         log(_state["detail"])
@@ -279,6 +327,180 @@ def run(req: dict = Body(...)) -> JSONResponse:
     return JSONResponse({"html": page, "stats": stats, "prompt": prompt, "output": output})
 
 
+def _compact(r: dict) -> dict:
+    """The slice of one flood record the page draws. The full record goes to
+    FLOOD_OUT; this is what streams, so it stays small."""
+    last = r["positions"][-1]
+    return {
+        "id": r["id"],
+        "family": r["family"],
+        "tier": r["tier"],
+        "correct": r["correct"],
+        "answer_later": r["answer_later"],
+        "band_scored": r["band_scored"],
+        "answer_single_token": r["answer_single_token"],
+        "continuation": r["continuation"],
+        "model_p": last["model_answer_p"],
+        "model_top1": last["model_top1"],
+        "pos_rank": [p["band_min_answer_rank"] for p in r["positions"]],
+        "layer_rank": [l["answer_rank"] for l in last["layers"]],
+        "entropy": last["band_min_entropy"],
+        "occ": last["occupancy"],
+        "stab": last["top1_stability"],
+        "inter": last["band_min_inter_rank"],
+    }
+
+
+def _flood_worker(band: list[int], positions: int, gen: int, items: list[dict]) -> None:
+    global _flood_mask
+    try:
+        import torch
+
+        if _flood_mask is None:
+            vocab = int(
+                _model.unembed(torch.zeros(_model.d_model, device=_model.input_device)).shape[-1]
+            )
+            _flood_mask = wordlike_mask(_model, vocab)
+        t0 = time.time()
+        with open(FLOOD_OUT, "w") as f:
+            for item in items:
+                with _lock:
+                    r = measure(_model, _lens, item, band, positions, gen, _flood_mask)
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                f.flush()
+                with _flood_cv:
+                    _flood["results"].append(_compact(r))
+                    _flood_cv.notify_all()
+        log(f"flood done: {len(items)} items in {time.time() - t0:.0f}s -> {FLOOD_OUT}")
+    except Exception:
+        _flood["error"] = traceback.format_exc()
+        log("FLOOD FAILED\n" + _flood["error"])
+    finally:
+        with _flood_cv:
+            _flood["running"] = False
+            _flood_cv.notify_all()
+
+
+@app.post("/flood/start")
+def flood_start(req: dict = Body(...)) -> JSONResponse:
+    """Run the whole flood suite in this process, one item at a time."""
+    if _state["status"] != "ready":
+        return JSONResponse(
+            {"error": f"model is not ready ({_state['status']}: {_state['detail']})"}, 503
+        )
+    if _flood["running"]:
+        return JSONResponse({"error": "a flood run is already going"}, 409)
+
+    def clamp(key: str, default: int, lo: int, hi: int) -> int:
+        try:
+            return max(lo, min(hi, int(req.get(key, default))))
+        except (TypeError, ValueError):
+            return default
+
+    fitted = _lens.source_layers
+    lo = clamp("band_lo", 24, min(fitted), max(fitted))
+    hi = clamp("band_hi", 58, min(fitted), max(fitted))
+    positions = clamp("positions", 6, 1, 8)
+    gen = clamp("gen", 12, 1, 32)
+    band = [l for l in fitted if lo <= l <= hi]
+    if not band:
+        return JSONResponse({"error": f"empty band {lo}..{hi}; fitted layers are {fitted}"}, 400)
+
+    items = [json.loads(l) for l in open(FLOOD_ITEMS) if l.strip()]
+    with _flood_cv:
+        _flood.update(
+            running=True,
+            total=len(items),
+            results=[],
+            error=None,
+            params={"band": band, "positions": positions, "gen": gen},
+        )
+        _flood_cv.notify_all()
+    threading.Thread(
+        target=_flood_worker, args=(band, positions, gen, items), daemon=True
+    ).start()
+    log(
+        f"flood start: {len(items)} items | band {band[0]}..{band[-1]} ({len(band)} layers) "
+        f"| positions {positions} | gen {gen}"
+    )
+    return JSONResponse({"total": len(items), "params": _flood["params"]})
+
+
+@app.get("/flood/status")
+def flood_status(since: int = 0) -> JSONResponse:
+    """Whole state for a late-joining tab, or for curl. The page uses /flood/events."""
+    results = _flood["results"]
+    return JSONResponse(
+        {
+            "running": _flood["running"],
+            "total": _flood["total"],
+            "done": len(results),
+            "error": _flood["error"],
+            "params": _flood["params"],
+            "results": results[since:],
+        }
+    )
+
+
+def _sse(name: str, payload: dict) -> str:
+    return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@app.get("/flood/events")
+def flood_events() -> StreamingResponse:
+    """Server-sent events: a snapshot, then one `item` per completed item, then
+    `done`. A sync generator, so uvicorn runs it on a worker thread and the
+    blocking wait on the condition is fine."""
+
+    def gen():
+        with _flood_cv:
+            sent = len(_flood["results"])
+            running = _flood["running"]
+            snapshot = {
+                "running": running,
+                "total": _flood["total"],
+                "done": sent,
+                "error": _flood["error"],
+                "params": _flood["params"],
+                "results": list(_flood["results"]),
+            }
+        yield _sse("snapshot", snapshot)
+        while True:
+            if not running:
+                yield _sse(
+                    "done",
+                    {"done": sent, "total": snapshot["total"], "error": _flood["error"]},
+                )
+                return
+            with _flood_cv:
+                if len(_flood["results"]) == sent and _flood["running"]:
+                    _flood_cv.wait(15)
+                new = _flood["results"][sent:]
+                sent += len(new)
+                running = _flood["running"]
+                snapshot["total"] = _flood["total"]
+            if not new and running:
+                yield ": keepalive\n\n"  # the tunnel and any proxy in between
+                continue
+            for rec in new:
+                yield _sse("item", rec)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/flood/results.jsonl")
+def flood_results():
+    if not os.path.exists(FLOOD_OUT):
+        return JSONResponse({"error": "no flood results on disk yet"}, 404)
+    return FileResponse(
+        FLOOD_OUT, media_type="application/x-ndjson", filename="flood-results.jsonl"
+    )
+
+
 PAGE = """<!doctype html><meta charset=utf-8><title>J-lens</title>
 <style>
 *{box-sizing:border-box}
@@ -302,8 +524,8 @@ button:disabled{opacity:.4;cursor:default}
 .ex{background:none;border:none;color:#6f8db3;padding:0;text-align:left;font-size:11px;
     cursor:pointer;text-decoration:underline dotted}
 .ex:hover{color:#9dc0e8}
-#stats{color:#6b727d;font-size:11px;min-height:1.5em}
-#err{white-space:pre-wrap;color:#e08a7a;background:#1a1214;border:1px solid #3d2226;
+#stats,#flood_stats{color:#6b727d;font-size:11px;min-height:1.5em}
+#err,#flood_err{white-space:pre-wrap;color:#e08a7a;background:#1a1214;border:1px solid #3d2226;
      border-radius:3px;padding:8px;font-size:11px;display:none}
 #output{display:none;background:#12151a;border:1px solid #262b33;border-radius:3px;padding:8px 10px;
         white-space:pre-wrap;word-break:break-word}
@@ -312,6 +534,17 @@ button:disabled{opacity:.4;cursor:default}
 #next{color:#6b727d;font-size:11px;margin-top:6px}
 #next b{color:#cfe0f5;font-weight:600}
 iframe{width:100%;height:78vh;border:1px solid #262b33;border-radius:3px;background:#fff;display:none}
+section{border-top:1px solid #1e2229;margin-top:6px;padding-top:12px;
+        display:flex;flex-direction:column;gap:8px}
+h2{font-size:12px;margin:0;color:#e6e9ee;font-weight:600;letter-spacing:.04em}
+a{color:#6f8db3;font-size:11px}
+.cap{color:#6b727d;font-size:11px;margin:8px 0 2px}
+canvas{display:block}
+#flood_vis{display:none}
+.sw{display:inline-block;width:9px;height:9px;margin-right:4px;vertical-align:middle}
+#tip{position:fixed;display:none;z-index:9;pointer-events:none;max-width:340px;
+     white-space:pre-wrap;background:#12151a;border:1px solid #33465e;border-radius:3px;
+     padding:5px 7px;font-size:11px;color:#c9cdd4}
 </style>
 <header><h1>J-LENS</h1><span id=detail>connecting...</span></header>
 <main>
@@ -329,7 +562,32 @@ iframe{width:100%;height:78vh;border:1px solid #262b33;border-radius:3px;backgro
 <div id=err></div>
 <div id=output><span class=ctx></span><span class=gen></span><div id=next></div></div>
 <iframe id=out></iframe>
+<section>
+  <h2>FLOOD SUITE</h2>
+  <div class=row>
+    <label>band_lo <input type=number id=band_lo value=24></label>
+    <label>band_hi <input type=number id=band_hi value=58></label>
+    <label>positions <input type=number id=positions value=6 min=1 max=8></label>
+    <label>gen <input type=number id=gen value=12 min=1 max=32></label>
+    <button id=flood_go disabled>start flood</button>
+    <span id=flood_stats></span>
+    <a href="/flood/results.jsonl" download>results.jsonl</a>
+  </div>
+  <div id=flood_err></div>
+  <div id=flood_vis>
+    <div class=cap id=cap_acc>accuracy by tier</div>
+    <canvas id=cv_acc></canvas>
+    <div class=row id=fam_legend></div>
+    <div class=cap id=cap_band>answer rank in the band, last position</div>
+    <canvas id=cv_band></canvas>
+    <div class=cap id=cap_lead>when the answer becomes readable</div>
+    <canvas id=cv_lead></canvas>
+    <div class=cap>rank scale</div>
+    <canvas id=cv_key></canvas>
+  </div>
+</section>
 </main>
+<div id=tip></div>
 <script>
 const EX = __EXAMPLES__;
 const $ = id => document.getElementById(id);
@@ -357,12 +615,228 @@ function showOutput(prompt, o) {
   });
   box.style.display = 'block';
 }
+// --- flood suite ------------------------------------------------------------
+// Rows are items in the order they ran, so both heatmaps share a y axis and the
+// canvases are sized for the whole suite up front: a new record paints one row
+// and never forces a redraw. A snapshot event repaints everything, which is how
+// an EventSource reconnect resyncs.
+const VIRIDIS = ['#440154','#3b528b','#21918c','#5ec962','#fde725'].map(
+  c => [1,3,5].map(i => parseInt(c.slice(i, i + 2), 16)));
+const FAMCOL = ['#6ea8e8','#e8a06e','#7ed19a','#d98fd0','#e8d36e','#b0b6c0'];
+const GUT = 84, PADT = 6, ROWH = 6;
+let fbusy = false, frecs = [], fparams = null, ftotal = 0, fes = null;
+let fcols = null, fcw = null, fmark = null;
+const famIdx = {};
+
+function famColor(f) {
+  if (!(f in famIdx)) famIdx[f] = Object.keys(famIdx).length;
+  return FAMCOL[famIdx[f] % FAMCOL.length];
+}
+function ramp(t) {
+  t = Math.max(0, Math.min(1, t)) * (VIRIDIS.length - 1);
+  const i = Math.min(VIRIDIS.length - 2, Math.floor(t)), f = t - i;
+  const a = VIRIDIS[i], b = VIRIDIS[i + 1];
+  return 'rgb(' + a.map((v, k) => Math.round(v + f * (b[k] - v))).join(',') + ')';
+}
+// rank 0 is the darkest stop; 10k and past it saturate at the brightest.
+const rankColor = r => r === null || r === undefined ? '#2b2226' : ramp(Math.log10(r + 1) / 4);
+
+function drawKey() {
+  const cv = $('cv_key'), g = cv.getContext('2d');
+  cv.width = 300; cv.height = 26;
+  for (let x = 0; x < 200; x++) { g.fillStyle = ramp(x / 199); g.fillRect(x, 0, 1, 10); }
+  g.font = '10px ui-monospace,monospace'; g.fillStyle = '#6b727d'; g.textBaseline = 'top';
+  ['rank 0','10','100','1k','10k+'].forEach((s, i) => {
+    g.textAlign = i === 0 ? 'left' : (i === 4 ? 'right' : 'center');
+    g.fillText(s, i * 50, 12);
+  });
+}
+function drawFamLegend(fams) {
+  const box = $('fam_legend'); box.textContent = '';
+  fams.forEach(f => {
+    const sw = document.createElement('span');
+    sw.className = 'sw'; sw.style.background = famColor(f);
+    const lab = document.createElement('label');
+    lab.append(sw, f);
+    box.appendChild(lab);
+  });
+}
+function drawAcc() {
+  const cv = $('cv_acc'), g = cv.getContext('2d');
+  const W = cv.width = 480, H = cv.height = 150, X0 = 32, Y0 = 10;
+  const PW = W - X0 - 12, PH = H - Y0 - 24;
+  g.clearRect(0, 0, W, H);
+  const by = {}, tiers = new Set();
+  frecs.forEach(r => {
+    const f = by[r.family] = by[r.family] || {};
+    f[r.tier] = f[r.tier] || [0, 0];
+    f[r.tier][0] += r.correct ? 1 : 0; f[r.tier][1]++;
+    tiers.add(r.tier);
+  });
+  const ts = [...tiers].sort((a, b) => a - b);
+  if (!ts.length) return;
+  const tmin = ts[0], tmax = ts[ts.length - 1];
+  const X = t => X0 + (tmax > tmin ? (t - tmin) / (tmax - tmin) : 0.5) * PW;
+  const Y = a => Y0 + (1 - a) * PH;
+  g.font = '10px ui-monospace,monospace';
+  g.textBaseline = 'middle'; g.textAlign = 'right';
+  [0, 0.5, 1].forEach(a => {
+    g.strokeStyle = '#1e2229'; g.beginPath();
+    g.moveTo(X0, Y(a) + 0.5); g.lineTo(X0 + PW, Y(a) + 0.5); g.stroke();
+    g.fillStyle = '#6b727d'; g.fillText(a.toFixed(1), X0 - 5, Y(a));
+  });
+  g.textBaseline = 'top'; g.textAlign = 'center';
+  g.fillStyle = '#6b727d';
+  ts.forEach(t => g.fillText('t' + t, X(t), Y0 + PH + 5));
+  Object.keys(by).forEach(f => {
+    const pts = Object.keys(by[f]).map(Number).sort((a, b) => a - b)
+      .map(t => [X(t), Y(by[f][t][0] / by[f][t][1])]);
+    g.strokeStyle = g.fillStyle = famColor(f); g.lineWidth = 1.5;
+    g.beginPath();
+    pts.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]));
+    g.stroke();
+    pts.forEach(p => { g.beginPath(); g.arc(p[0], p[1], 2, 0, 6.284); g.fill(); });
+  });
+  drawFamLegend(Object.keys(by));
+}
+function drawHeatRow(cv, i, ranks, cw, mark) {
+  const g = cv.getContext('2d'), rec = frecs[i], y = PADT + i * ROWH, w = ranks.length * cw;
+  // items.jsonl interleaves nth-letter with count-letter, so a separator on every
+  // family change would be a line per row. The rail carries the grouping; the name
+  // and the rule are drawn once, where the family first appears.
+  const st = fmark[cv.id];
+  g.fillStyle = famColor(rec.family);
+  g.fillRect(GUT - 7, y, 4, ROWH - 1);
+  if (!st.seen.has(rec.family)) {
+    st.seen.add(rec.family);
+    g.strokeStyle = '#39404a'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(GUT - 8, y - 0.5); g.lineTo(GUT + w, y - 0.5); g.stroke();
+    st.lastY = Math.max(y, st.lastY + 11);  // 6px rows, 10px text: never overlap
+    g.font = '10px ui-monospace,monospace'; g.textAlign = 'left'; g.textBaseline = 'top';
+    g.fillText(rec.family, 2, st.lastY);
+  }
+  if (!rec.band_scored || !rec.answer_single_token) {
+    // rank is meaningless here: single-letter answers, or answers the tokenizer
+    // splits. Hatched rather than dropped, so the row order still lines up.
+    g.save(); g.beginPath(); g.rect(GUT, y, w, ROWH - 1); g.clip();
+    g.fillStyle = '#23272e'; g.fillRect(GUT, y, w, ROWH - 1);
+    g.strokeStyle = '#3c434d'; g.lineWidth = 1; g.beginPath();
+    for (let hx = GUT - ROWH; hx < GUT + w; hx += 5) {
+      g.moveTo(hx, y + ROWH - 1); g.lineTo(hx + ROWH, y);
+    }
+    g.stroke(); g.restore();
+  } else {
+    for (let c = 0; c < ranks.length; c++) {
+      g.fillStyle = rankColor(ranks[c]);
+      g.fillRect(GUT + c * cw, y, cw, ROWH - 1);
+    }
+  }
+  if (mark) {
+    g.fillStyle = rec.correct ? '#5fbf7a' : (rec.answer_later ? '#d6a34a' : '#c9564c');
+    g.fillRect(GUT + w + 4, y, 2, ROWH - 1);
+  }
+}
+function drawRow(i) {
+  drawHeatRow($('cv_band'), i, frecs[i].layer_rank, fcw.band, true);
+  drawHeatRow($('cv_lead'), i, frecs[i].pos_rank, fcw.lead, false);
+}
+function floodProgress(state) {
+  $('flood_stats').textContent = ftotal ? frecs.length + ' / ' + ftotal + ' · ' + state : '';
+}
+function floodSetup() {
+  const vis = $('flood_vis');
+  if (!ftotal || !fparams || !fparams.band) { vis.style.display = 'none'; return; }
+  vis.style.display = 'block';
+  fcols = {band: fparams.band, lead: []};
+  for (let i = fparams.positions; i > 0; i--) fcols.lead.push('-' + i);
+  fcw = {band: Math.max(4, Math.min(24, Math.floor(420 / fcols.band.length))),
+         lead: Math.max(6, Math.min(26, Math.floor(300 / fcols.lead.length)))};
+  fmark = {cv_band: {seen: new Set(), lastY: -99}, cv_lead: {seen: new Set(), lastY: -99}};
+  const b = $('cv_band'), c = $('cv_lead'), h = PADT + ftotal * ROWH + 6;
+  b.width = GUT + fcols.band.length * fcw.band + 10; b.height = h;
+  c.width = GUT + fcols.lead.length * fcw.lead + 4; c.height = h;
+  $('cap_band').textContent = 'answer rank in the band, last position · L'
+    + fcols.band[0] + '..L' + fcols.band[fcols.band.length - 1]
+    + ' · right edge: green correct, amber later, red wrong';
+  $('cap_lead').textContent = 'when the answer becomes readable · positions '
+    + fcols.lead[0] + '..' + fcols.lead[fcols.lead.length - 1];
+  drawKey();
+}
+function floodAdd(rec) { frecs.push(rec); drawRow(frecs.length - 1); drawAcc(); }
+function floodErr(msg) { $('flood_err').style.display = 'block'; $('flood_err').textContent = msg; }
+
+function floodOpen() {
+  if (fes) fes.close();
+  fes = new EventSource('/flood/events');
+  fes.addEventListener('snapshot', e => {
+    const s = JSON.parse(e.data);
+    frecs = []; fparams = s.params; ftotal = s.total;
+    floodSetup();
+    s.results.forEach(floodAdd);
+    if (s.error) floodErr(s.error);
+    fbusy = s.running;
+    if (s.running) $('flood_go').disabled = true;  // re-enabling is poll()'s job
+    floodProgress(s.running ? 'running' : (s.error ? 'error' : 'done'));
+  });
+  fes.addEventListener('item', e => { floodAdd(JSON.parse(e.data)); floodProgress('running'); });
+  fes.addEventListener('done', e => {
+    const d = JSON.parse(e.data);
+    if (d.error) floodErr(d.error);
+    floodProgress(d.error ? 'error' : 'done');
+    fbusy = false; $('flood_go').disabled = false;
+    fes.close(); fes = null;
+  });
+}
+['band','lead'].forEach(k => {
+  const cv = $(k === 'band' ? 'cv_band' : 'cv_lead');
+  cv.onmousemove = ev => {
+    if (!fcols) return;
+    const box = cv.getBoundingClientRect(), cols = fcols[k];
+    const row = Math.floor((ev.clientY - box.top - PADT) / ROWH);
+    const col = Math.floor((ev.clientX - box.left - GUT) / fcw[k]);
+    if (row < 0 || row >= frecs.length || col < 0 || col >= cols.length) {
+      $('tip').style.display = 'none'; return;
+    }
+    const rec = frecs[row];
+    const v = (k === 'band' ? rec.layer_rank : rec.pos_rank)[col];
+    const skipped = rec.band_scored && rec.answer_single_token ? '' : '  (not band-scored)';
+    $('tip').textContent = `${rec.id}  ${rec.family} tier ${rec.tier}
+${k === 'band' ? 'layer' : 'position'} ${cols[col]}   rank ${v === null ? 'n/a' : v}${skipped}
+${JSON.stringify(rec.continuation)}`;
+    $('tip').style.display = 'block';
+    $('tip').style.left = (ev.clientX + 12) + 'px';
+    $('tip').style.top = (ev.clientY + 12) + 'px';
+  };
+  cv.onmouseleave = () => { $('tip').style.display = 'none'; };
+});
+$('flood_go').onclick = async () => {
+  fbusy = true; $('flood_go').disabled = true; $('flood_err').style.display = 'none';
+  $('flood_stats').textContent = 'starting...';
+  const body = {};
+  for (const k of ['band_lo','band_hi','positions','gen']) body[k] = parseInt($(k).value, 10);
+  try {
+    const r = await fetch('/flood/start', {method:'POST', headers:{'Content-Type':'application/json'},
+                                           body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok || d.error) {
+      $('flood_stats').textContent = ''; floodErr(d.error || ('HTTP ' + r.status));
+      fbusy = false; $('flood_go').disabled = false; return;
+    }
+    floodOpen();
+  } catch (e) {
+    $('flood_stats').textContent = ''; floodErr(String(e));
+    fbusy = false; $('flood_go').disabled = false;
+  }
+};
+floodOpen();  // picks up a run already in progress, e.g. after a page reload
+
 async function poll() {
   let delay = 3000;
   try {
     const s = await (await fetch('/status')).json();
     $('detail').textContent = s.status === 'ready' ? s.detail : s.status + ': ' + s.detail;
     if (!busy) $('go').disabled = s.status !== 'ready';
+    if (!fbusy) $('flood_go').disabled = s.status !== 'ready';
     if (s.status === 'failed') { $('err').style.display = 'block'; $('err').textContent = s.error; }
     if (s.status !== 'loading') delay = 15000;  // keep watching: bootstrap.sh is re-runnable
   } catch (e) { $('detail').textContent = 'server unreachable'; }

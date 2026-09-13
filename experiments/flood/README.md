@@ -43,7 +43,11 @@ The term is not defined in the literature. The suite records enough to test each
 | absence | the answer and its intermediates never load; the model confabulates from the final layers only | `band_min_answer_rank`, `band_min_inter_rank`, `model_answer_p` |
 
 All three are computed per item, so which one tracks correctness is an empirical
-question for `analyze.py`, not a choice made here.
+question for `analyze.py`, not a choice made here. It also reports `later` (the
+answer appears somewhere in the continuation but not as the next token: showed work
+rather than wrong), `inter_rank` (the worst-loaded intermediate at the readout
+position), and `lead` (how many positions before the last the answer first reaches
+band rank 5 or better, the "does the band lead the output" test).
 
 ## Ladder
 
@@ -51,19 +55,28 @@ question for `analyze.py`, not a choice made here.
 
 | family | tiers | what rises |
 |---|---|---|
-| arith | 1-7 | tiers 1-4 mirror the paper's modulation tiers; 5-7 need a 2-, 3- or 4-digit product held covertly, reduced mod a small number so the answer stays one digit |
-| count-letter | 1-4 | word length; count of the most frequent letter |
+| arith | 1-7 | tiers 1-4 mirror the paper's modulation tiers; 5-7 need a 2-, 3- or 4-digit product held covertly, reduced mod a small number so the answer stays one digit. A two-shot prefix of the same shape makes the answer the very next token |
+| count-letter | 1-4 | word length; count of the most frequent letter. Two-shot prefix as above, prompt ends `is ` so the digit comes next |
 | nth-letter | 1-4 | word length and index depth |
 | anagram | 1-5 | word length |
 | multihop | 1-4 | number of bridge entities, with intermediates labelled |
 
 Answers are single tokens where possible so the lens can name them. `run.py`
 re-checks against the real tokenizer and records `answer_single_token`; rank metrics
-are skipped for the rest, correctness still counts.
+are skipped for the rest, correctness still counts. Items whose every answer form is
+a single letter (all of `nth-letter`, three tier-4 `multihop`) carry
+`band_scored: false`: a single letter never loads in the band even when the model is
+right, so `ans_rank` and `lead` skip them too.
 
 ## Run
 
-From the laptop, with an instance provisioned and its bootstrap finished:
+The usual way is the dashboard's own `FLOOD SUITE` section: it runs this suite inside
+the dashboard process, so it reuses the model already on the card, the page stays
+usable between items, and the three visuals fill in live as each item lands. Set the
+band, positions and gen there, press `start flood`, and pull the full records from
+`/flood/results.jsonl` when it finishes. See `deploy/README.md`.
+
+Headless, from the laptop, with an instance provisioned and its bootstrap finished:
 
 ```bash
 cd deploy && ./flood.sh                 # copies the suite over, runs it, pulls results, analyzes
@@ -71,13 +84,13 @@ cd deploy && ./flood.sh                 # copies the suite over, runs it, pulls 
 ```
 
 It stops the dashboard first (two copies of the model do not fit a 48GB card) and
-restarts it afterwards. Results land in `experiments/flood/results.jsonl`; re-run
-`python analyze.py results.jsonl` any time.
+restarts it afterwards. Results land in
+`experiments/flood/results.jsonl`; re-run `python analyze.py results.jsonl` any time.
 
 Options: `--band LO HI` (default 24 58, the paper's L38-92 on a 0-100 reindex mapped
-onto 64 layers), `--positions N` to read out the last N prompt positions instead of
-one, `--gen` greedy tokens for correctness, `--no-mask` to let punctuation into the
-top-k. `--tiny` runs the whole pipeline on `tests/tiny.py` on CPU as a smoke test;
+onto 64 layers), `--positions N` to read out the last N prompt positions (default 6),
+`--gen` greedy tokens for correctness (default 12), `--no-mask` to let punctuation
+into the top-k. `--tiny` runs the whole pipeline on `tests/tiny.py` on CPU as a smoke test;
 its numbers mean nothing.
 
 Expect a few seconds per item on an A6000 at NF4.

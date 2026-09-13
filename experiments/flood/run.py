@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -157,6 +158,8 @@ def measure(model, lens, item: dict, band: list[int], n_pos: int, gen: int, mask
     cont = model.tokenizer.decode(cont_ids)
     norm = cont.strip().strip('"\'').lower()
     correct = any(norm.startswith(a.lower()) for a in item["answer"])
+    # Whole-word match: a single-letter answer would otherwise match almost anything.
+    later = not correct and any(re.search(rf"\b{re.escape(a)}\b", cont, re.I) for a in item["answer"])
     return dict(
         id=item["id"],
         family=item["family"],
@@ -165,8 +168,10 @@ def measure(model, lens, item: dict, band: list[int], n_pos: int, gen: int, mask
         n_tokens=int(input_ids.shape[1]),
         answer=item["answer"],
         answer_single_token=bool(ans_ids),
+        band_scored=bool(item.get("band_scored", True)),
         continuation=cont,
         correct=correct,
+        answer_later=later,
         positions=per_pos,
     )
 
@@ -198,8 +203,8 @@ def main() -> None:
     ap.add_argument("--out", default=os.path.join(HERE, "results.jsonl"))
     ap.add_argument("--band", nargs=2, type=int, default=[24, 58], metavar=("LO", "HI"),
                     help="workspace band, inclusive; paper's L38-92 of 100 on 64 layers")
-    ap.add_argument("--positions", type=int, default=1, help="read out the last N prompt positions")
-    ap.add_argument("--gen", type=int, default=6, help="greedy tokens for correctness")
+    ap.add_argument("--positions", type=int, default=6, help="read out the last N prompt positions")
+    ap.add_argument("--gen", type=int, default=12, help="greedy tokens for correctness")
     ap.add_argument("--no-mask", action="store_true", help="do not restrict top-k to word-like tokens")
     ap.add_argument("--tiny", action="store_true", help="CPU smoke test on tests/tiny.py")
     a = ap.parse_args()
@@ -221,8 +226,9 @@ def main() -> None:
             f.flush()
             p = r["positions"][-1]
             print(
-                f"[{n:3}/{len(items)}] {r['id']:<18} ok={int(r['correct'])} "
-                f"ans_rank={p['band_min_answer_rank']} H={p['band_min_entropy']:.2f} "
+                f"[{n:3}/{len(items)}] {r['id']:<18} ok={int(r['correct'])} later={int(r['answer_later'])} "
+                f"ans_rank={p['band_min_answer_rank']} inter={p['band_min_inter_rank']} "
+                f"H={p['band_min_entropy']:.2f} "
                 f"occ={p['occupancy']} stab={p['top1_stability']:.2f} -> {r['continuation']!r}",
                 flush=True,
             )

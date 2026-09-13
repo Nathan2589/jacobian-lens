@@ -275,6 +275,12 @@ while :; do
       ;;
     exited|unknown|offline) die "instance reached terminal state '$STATUS' - it will never run. Destroy and retry." ;;
   esac
+  # A host that fails to build the image reports 'loading' with the contract already
+  # stopped, and sits there until the timeout. Seen as "docker_build() error writing
+  # dockerfile". Stop waiting: it never comes up, and it bills meanwhile.
+  if [ "$(jq -r '.cur_state // ""' <<<"$INST")" = stopped ] && [[ "$MSG" == *error* ]]; then
+    die "host failed to start the container ('$MSG') - it will never run. Destroy and retry; a fresh provision picks a different host."
+  fi
   [ "$(date +%s)" -lt "$DEADLINE" ] || die "timed out waiting for 'running'"
   sleep 10
 done
