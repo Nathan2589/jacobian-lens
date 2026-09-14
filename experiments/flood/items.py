@@ -61,7 +61,7 @@ def arith() -> list[dict]:
     for tier, make in specs.items():
         prefix, shot_exprs = SHOTS["mod" if tier >= 5 else "plain"]
         seen: set[str] = set()
-        for i in range(6):
+        for _ in range(30 if tier >= 5 else 6):
             expr, ans = make()
             while ans < 0 or ans > 12 or expr in seen or expr in shot_exprs:
                 expr, ans = make()
@@ -84,12 +84,21 @@ def arith() -> list[dict]:
 
 def letters() -> list[dict]:
     """Count a letter / name the nth letter. Difficulty is word length and
-    index depth; both fail without CoT past a point."""
+    index depth; both fail without CoT past a point. Every word has exactly one
+    most-frequent letter and a different least-frequent one, so both
+    count-letter items per word are well defined and the file regenerates the
+    same way each run."""
     words = {
-        1: ["cat", "dog", "sun", "map", "pen", "cup"],
-        2: ["planet", "garden", "silver", "window", "bottle", "pillow"],
-        3: ["mountain", "elephant", "keyboard", "umbrella", "hospital", "notebook"],
-        4: ["independence", "photosynthesis", "refrigerator", "encyclopedia", "thermodynamics", "archaeological"],
+        1: ["eel", "egg", "odd", "off", "all", "ebb", "err", "inn", "too", "see",
+            "bee", "add", "ill", "eye", "pop"],
+        2: ["bottle", "pillow", "butter", "summer", "yellow", "banana", "dinner", "ladder",
+            "hammer", "rabbit", "puppet", "carrot", "mirror", "tunnel", "bubble"],
+        3: ["mountain", "elephant", "umbrella", "notebook", "pancakes", "sailboat", "exercise",
+            "squirrel", "calendar", "envelope", "scissors", "reporter", "villager", "suitcase",
+            "eggplant"],
+        4: ["independence", "photosynthesis", "refrigerator", "thermodynamics", "archaeological",
+            "multiplication", "constitution", "understanding", "international", "transportation",
+            "unbelievable", "neighborhood", "responsibility", "announcement", "experimental"],
     }
     shots = (
         'The number of times the letter "a" appears in the word "banana" is 3.\n'
@@ -109,15 +118,19 @@ def letters() -> list[dict]:
                 )
             )
             ch = max(set(w), key=w.count)
-            out.append(
-                dict(
-                    family="count-letter",
-                    tier=tier,
-                    prompt=f'{shots}The number of times the letter "{ch}" appears in the word "{w}" is ',
-                    answer=num(w.count(ch)),
-                    intermediates=[],
+            # and the rarest letter that is still in the word: same prompt shape,
+            # but a count of 1 that has to be found rather than a salient repeat.
+            rare = min(sorted(set(w)), key=w.count)
+            for c in (ch, rare) if rare != ch else (ch,):
+                out.append(
+                    dict(
+                        family="count-letter",
+                        tier=tier,
+                        prompt=f'{shots}The number of times the letter "{c}" appears in the word "{w}" is ',
+                        answer=num(w.count(c)),
+                        intermediates=[],
+                    )
                 )
-            )
     return out
 
 
@@ -192,8 +205,55 @@ def multihop() -> list[dict]:
     ]
 
 
+# Questions with a wrong answer that is more available than the right one. Raw
+# completions, no shots: the trap continuation is what a shot-free model reaches
+# for. Every one is single-tier, because the difficulty is the pull of the trap
+# and not the size of the problem. The comment on each line is the trap.
+TRICK = [
+    ("Tom's mother has three children. The first is named Snap, the second is named Crackle, "
+     "and the third is named", ["Tom"]),  # Pop
+    ("Sally has 3 brothers. Each of her brothers has 2 sisters. The number of sisters Sally has is",
+     ["1", "one"]),  # 2
+    ("A bat and a ball cost 110 cents in total. The bat costs 100 cents more than the ball. "
+     "The ball costs, in cents,", ["5", "five"]),  # 10
+    ("If it takes 5 machines 5 minutes to make 5 widgets, the number of minutes it takes "
+     "100 machines to make 100 widgets is", ["5", "five"]),  # 100
+    ("A farmer has 17 sheep. All but 9 die. The number of sheep left alive is", ["9", "nine"]),  # 8
+    ("The number of months in a year that have at least 28 days is", ["12", "twelve"]),  # 1
+    ("The number of animals of each kind that Moses took onto the ark was",
+     ["0", "zero", "none"]),  # two; it was Noah
+    ("The capital city of Australia is", ["Canberra"]),  # Sydney
+    ("The capital city of Canada is", ["Ottawa"]),  # Toronto
+    ("The capital city of Turkey is", ["Ankara"]),  # Istanbul
+    ("The capital city of Switzerland is", ["Bern"]),  # Zurich
+    ("The country with the largest number of pyramids is", ["Sudan"]),  # Egypt
+    ("The largest desert on Earth is the", ["Antarctic", "Antarctica"]),  # Sahara
+    ("The star closest to Earth is the", ["Sun"]),  # Proxima
+    ("Seen from space, the color of the Sun is", ["white"]),  # yellow
+    ("The color of an airplane's so-called black box is", ["orange"]),  # black
+    ("Bananas grow on large", ["plants", "herbs", "plant", "herb"]),  # trees
+    ("Botanically, a tomato is a", ["fruit", "berry"]),  # vegetable
+    ("The plural of the word moose is", ["moose"]),  # meese
+    ("Bulls in a bullring are provoked mainly by the cape's", ["movement", "motion"]),  # red color
+    ("A goldfish's memory span lasts about three", ["months", "weeks"]),  # seconds
+    ("The workers who built the Great Pyramid of Giza were",
+     ["paid", "workers", "laborers", "Egyptians", "skilled"]),  # slaves
+    ("Chameleons change their color mainly in order to",
+     ["communicate", "regulate", "signal", "warm"]),  # camouflage
+    ("Alexander Graham Bell was born in", ["Scotland", "Edinburgh"]),  # America
+    ("The number of sides on a standard stop sign is", ["8", "eight"]),
+    ("The number of hearts an octopus has is", ["3", "three"]),
+    ("The number of times the letter r appears in the word strawberry is", ["3", "three"]),  # 2
+    ("The heaviest land animal alive today is the", ["elephant", "African"]),
+]
+
+
+def trick() -> list[dict]:
+    return [dict(family="trick", tier=1, prompt=p, answer=a, intermediates=[]) for p, a in TRICK]
+
+
 if __name__ == "__main__":
-    items = arith() + letters() + anagram() + multihop()
+    items = arith() + letters() + anagram() + multihop() + trick()
     for n, it in enumerate(items):
         it = {"id": f"{it['family']}-{it['tier']}-{n}", **it, "band_scored": band_scored(it["answer"])}
         print(json.dumps(it, ensure_ascii=False))

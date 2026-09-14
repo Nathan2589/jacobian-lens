@@ -126,7 +126,7 @@ downloading anything.
 The `FLOOD SUITE` section at the bottom of the page runs `experiments/flood` **inside
 the dashboard process**, reusing the model that is already loaded. There is no second
 copy of the weights, and the page stays usable: the run takes the slice lock one item
-at a time, so a `/run` slice interleaves between items instead of waiting for all 129.
+at a time, so a `/run` slice interleaves between items instead of waiting for all 361.
 
 Set `band_lo`/`band_hi` (clamped to the lens's fitted layers), `positions` (the last N
 prompt positions to read out, 1-8) and `gen` (greedy tokens for correctness, 1-32), then

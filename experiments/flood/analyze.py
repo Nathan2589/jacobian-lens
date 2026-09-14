@@ -42,17 +42,43 @@ def lead(rs):
     return mean(leads)
 
 
+def rank2(r):
+    """Best answer rank over the last two read positions. The answer is computed
+    at the token before the last (the '=' or 'is'), and the last position is
+    often a formatting token whose band holds the task, not the answer."""
+    ranks = [q["band_min_answer_rank"] for q in r["positions"][-2:] if q["band_min_answer_rank"] is not None]
+    return min(ranks) if ranks else None
+
+
+def wrong_top1_p(rs):
+    """Output-layer top-1 probability of every wrong item in the group. Records
+    written before run.py recorded it contribute nothing, so the columns built
+    on it come out blank rather than wrong."""
+    return [v for v in (p(r).get("model_top1_p") for r in rs if not r["correct"]) if v is not None]
+
+
+def confident_wrong(r):
+    v = p(r).get("model_top1_p")
+    return not r["correct"] and v is not None and v >= 0.5
+
+
 COLS = [
     ("n", lambda rs: len(rs)),
     ("acc", lambda rs: mean(r["correct"] for r in rs)),
     ("later", lambda rs: mean(r["answer_later"] for r in rs)),
     ("ans_rank", lambda rs: median(
         p(r)["band_min_answer_rank"] for r in rs if scored(r) and p(r)["band_min_answer_rank"] is not None)),
+    ("ans_rank2", lambda rs: median(rank2(r) for r in rs if scored(r) and rank2(r) is not None)),
+    ("knew", lambda rs: mean(rank2(r) <= 3 for r in rs if scored(r) and rank2(r) is not None)),
+    ("conf_wrong", lambda rs: mean(v >= 0.5 for v in wrong_top1_p(rs))),
+    ("knew_cw", lambda rs: mean(
+        rank2(r) <= 3 for r in rs if confident_wrong(r) and scored(r) and rank2(r) is not None)),
     ("inter_rank", inter_rank),
     ("lead", lead),
     ("model_p", lambda rs: mean(p(r)["model_answer_p"] for r in rs if p(r)["model_answer_p"] is not None)),
     ("entropy", lambda rs: mean(p(r)["band_min_entropy"] for r in rs)),
-    ("kurt", lambda rs: mean(p(r)["band_max_kurtosis"] for r in rs)),
+    # kurt dropped from the table to make room; still in results.jsonl. It never
+    # separated tiers or outcomes in run 2.
     ("occ", lambda rs: mean(p(r)["occupancy"] for r in rs)),
     ("stab", lambda rs: mean(p(r)["top1_stability"] for r in rs)),
     ("cls_share", lambda rs: mean(p(r)["class_share"] for r in rs if p(r)["class_share"] is not None)),

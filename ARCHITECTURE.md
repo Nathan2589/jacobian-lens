@@ -176,7 +176,7 @@ weakly loaded (§3.4). Nobody walks difficulty past the model and reports the fa
 
 ```mermaid
 flowchart LR
-    I["items.py"] -->|"5 families x 4-7 tiers, 129 items"| IJ["items.jsonl"]
+    I["items.py"] -->|"6 families x 1-7 tiers, 361 items"| IJ["items.jsonl"]
     IJ --> R["run.py on the instance"]
     R --> M["one forward per item"]
     M --> L["lens readout over the band at the last position"]
@@ -195,10 +195,11 @@ Families and what rises with tier:
 | family | tiers | difficulty axis |
 |---|---|---|
 | arith | 1 to 7 | 1 to 4 are the paper's modulation tiers; 5 to 7 need a 2, 3 or 4 digit product held covertly, reduced mod a small number so the answer stays one token |
-| count-letter | 1 to 4 | word length |
+| count-letter | 1 to 4 | word length; two items a word, the most frequent letter and the rarest one still present |
 | nth-letter | 1 to 4 | word length and index depth |
 | anagram | 1 to 5 | word length |
 | multihop | 1 to 4 | number of bridge entities, each labelled as an intermediate |
+| trick | 1 | nothing; a single tier of questions whose wrong answer is the available one, as a clean test of failure with the right answer in hand |
 
 Per-item metrics, all at the readout position over the band:
 
@@ -206,9 +207,13 @@ Per-item metrics, all at the readout position over the band:
 |---|---|---|
 | `acc` | greedy continuation starts with an answer form | falls with tier by construction |
 | `ans_rank` | best rank of any answer form over the band, median | rises when the answer never loads |
+| `ans_rank2` | the same, best over the last two positions | the one to read: the answer lands on the `=` or the `is`, not on the final token |
+| `knew` | fraction of band-scored items with `ans_rank2` at 3 or better | the answer was available, whatever came out |
+| `conf_wrong` | fraction of the group's wrong items whose output top-1 probability is at least 0.5 | confidently wrong: the failures a router cannot see from the output |
+| `knew_cw` | of those, the fraction with `ans_rank2` at 3 or better | splits the confident failures: high is answer-in-hand, low is absence |
 | `model_p` | probability of the answer at layer 63 | confidence of the actual output |
 | `entropy` | minimum over band layers of the lens distribution's entropy | high means no candidate dominates |
-| `kurt` | maximum over band layers of excess kurtosis of the lens logits | the paper's "nonrandomness"; low is diffuse |
+| `kurt` | maximum over band layers of excess kurtosis of the lens logits | the paper's "nonrandomness"; low is diffuse. Still in `results.jsonl`, dropped from the analyzer table: it moved with neither tier nor outcome in run 2 |
 | `occ` | distinct tokens in the word-like top-10 across the band | how many candidates compete |
 | `stab` | fraction of adjacent band layers with the same top-1 | low means the readout thrashes with depth |
 | `cls_share` | fraction of top-10 tokens that are the answer's type class, digits or letters | high with high `ans_rank` means the band holds the type, not the value |
@@ -229,6 +234,27 @@ flowchart TD
     S2 --> S2m["cls_share up, cls_n up, ans_rank up"]
     S3 --> S3m["ans_rank up, intermediate ranks up, model_p still high: confabulation"]
 ```
+
+Run 2 separated the families rather than picking one signature. Arithmetic past tier 5
+is **absence**: the answer is nowhere in the band, the covert product's first digit is
+only weakly loaded, occupancy rises and top-1 stability falls, and the output is still
+confident. count-letter and roughly half of multihop are the opposite, a case the three
+readings did not anticipate: the correct answer sits at band rank 0 or 1 at the position
+before the last, and the model emits a different value anyway. Neither saturation nor
+category collapse tracked correctness on its own. The readout position matters as much
+as the signature: the answer is computed at the `=` or the `is` and read there as a
+number word, while the final token's band holds the task, which is why `ans_rank2`
+replaced `ans_rank` as the column to read.
+
+That is two failure modes, not one, and they want opposite responses. Absence means the
+value was never computed, so the only fix is decomposition: break the problem up and
+spend more forward passes on the pieces. Answer-in-hand means the value was computed and
+the output stage lost it, so the fix is cheap: re-read the band, or re-sample. Output
+probability cannot tell them apart, since both are confidently wrong, which is the whole
+case for a band read in the router: `conf_wrong` finds the failures the output hides and
+`knew_cw` says which of the two responses is the right one. A router that cannot make
+that split pays decomposition cost on problems that needed a second look, which is the
+difference between a gating signal that saves tokens and one that spends them.
 
 How to read the tables:
 

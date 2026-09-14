@@ -151,6 +151,7 @@ def measure(model, lens, item: dict, band: list[int], n_pos: int, gen: int, mask
                 model_answer_rank=int(ranks_of(ml, ans_ids).min()) if ans_ids else None,
                 model_answer_p=float(torch.softmax(ml, -1)[ans_ids].sum()) if ans_ids else None,
                 model_top1=decode(ml.argmax()),
+                model_top1_p=float(torch.softmax(ml, -1).max()),
             )
         )
 

@@ -331,6 +331,10 @@ def _compact(r: dict) -> dict:
     """The slice of one flood record the page draws. The full record goes to
     FLOOD_OUT; this is what streams, so it stays small."""
     last = r["positions"][-1]
+    # The answer is computed at the token before the last (the "=" or "is"); the
+    # last position's band often holds the task instead. Both are drawn.
+    prev = r["positions"][-2] if len(r["positions"]) > 1 else None
+    pos_rank = [p["band_min_answer_rank"] for p in r["positions"]]
     return {
         "id": r["id"],
         "family": r["family"],
@@ -342,8 +346,11 @@ def _compact(r: dict) -> dict:
         "continuation": r["continuation"],
         "model_p": last["model_answer_p"],
         "model_top1": last["model_top1"],
-        "pos_rank": [p["band_min_answer_rank"] for p in r["positions"]],
+        "model_top1_p": last["model_top1_p"],
+        "pos_rank": pos_rank,
+        "rank2": min([v for v in pos_rank[-2:] if v is not None], default=None),
         "layer_rank": [l["answer_rank"] for l in last["layers"]],
+        "layer_rank2": [l["answer_rank"] for l in prev["layers"]] if prev else None,
         "entropy": last["band_min_entropy"],
         "occ": last["occupancy"],
         "stab": last["top1_stability"],
@@ -622,7 +629,7 @@ function showOutput(prompt, o) {
 // an EventSource reconnect resyncs.
 const VIRIDIS = ['#440154','#3b528b','#21918c','#5ec962','#fde725'].map(
   c => [1,3,5].map(i => parseInt(c.slice(i, i + 2), 16)));
-const FAMCOL = ['#6ea8e8','#e8a06e','#7ed19a','#d98fd0','#e8d36e','#b0b6c0'];
+const FAMCOL = ['#6ea8e8','#e8a06e','#7ed19a','#d98fd0','#e8d36e','#8fd0d9','#b0b6c0'];
 const GUT = 84, PADT = 6, ROWH = 6;
 let fbusy = false, frecs = [], fparams = null, ftotal = 0, fes = null;
 let fcols = null, fcw = null, fmark = null;
@@ -736,8 +743,16 @@ function drawHeatRow(cv, i, ranks, cw, mark) {
     g.fillRect(GUT + w + 4, y, 2, ROWH - 1);
   }
 }
+// Per layer, the better of the last two positions: the answer is prepared at the
+// token before the last, so reading only the last one calls that absence.
+function bandRanks(rec) {
+  const a = rec.layer_rank, b = rec.layer_rank2;
+  if (!b) return a;
+  return a.map((v, i) => v === null || v === undefined ? b[i]
+    : (b[i] === null || b[i] === undefined ? v : Math.min(v, b[i])));
+}
 function drawRow(i) {
-  drawHeatRow($('cv_band'), i, frecs[i].layer_rank, fcw.band, true);
+  drawHeatRow($('cv_band'), i, bandRanks(frecs[i]), fcw.band, true);
   drawHeatRow($('cv_lead'), i, frecs[i].pos_rank, fcw.lead, false);
 }
 function floodProgress(state) {
@@ -755,7 +770,7 @@ function floodSetup() {
   const b = $('cv_band'), c = $('cv_lead'), h = PADT + ftotal * ROWH + 6;
   b.width = GUT + fcols.band.length * fcw.band + 10; b.height = h;
   c.width = GUT + fcols.lead.length * fcw.lead + 4; c.height = h;
-  $('cap_band').textContent = 'answer rank in the band, last position · L'
+  $('cap_band').textContent = 'answer rank in the band, best of last two positions · L'
     + fcols.band[0] + '..L' + fcols.band[fcols.band.length - 1]
     + ' · right edge: green correct, amber later, red wrong';
   $('cap_lead').textContent = 'when the answer becomes readable · positions '
@@ -798,10 +813,14 @@ function floodOpen() {
       $('tip').style.display = 'none'; return;
     }
     const rec = frecs[row];
-    const v = (k === 'band' ? rec.layer_rank : rec.pos_rank)[col];
     const skipped = rec.band_scored && rec.answer_single_token ? '' : '  (not band-scored)';
+    const fr = v => v === null || v === undefined ? 'n/a' : v;
+    const line = k === 'band'
+      ? `layer ${cols[col]}   rank -1 ${fr(rec.layer_rank[col])}, `
+        + `-2 ${fr(rec.layer_rank2 && rec.layer_rank2[col])}${skipped}`
+      : `position ${cols[col]}   rank ${fr(rec.pos_rank[col])}${skipped}`;
     $('tip').textContent = `${rec.id}  ${rec.family} tier ${rec.tier}
-${k === 'band' ? 'layer' : 'position'} ${cols[col]}   rank ${v === null ? 'n/a' : v}${skipped}
+${line}
 ${JSON.stringify(rec.continuation)}`;
     $('tip').style.display = 'block';
     $('tip').style.left = (ev.clientX + 12) + 'px';

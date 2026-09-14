@@ -32,6 +32,27 @@ its depth on this input, route or recurse".
   asks for exactly the dual-task and threshold tests, and argues the 25 may be
   inflated because the vectors are redundant facets of one "state of mind".
 
+## Findings so far (run 2)
+
+- The answer is computed at the token *before* the last one, the `=` or the `is`, and
+  it is read there as a number word; the last token's band holds the task rather than
+  the value, which is why `ans_rank2` (best of the last two positions) and not
+  `ans_rank` is the column to read.
+- Arithmetic fails by absence: past tier 5 the answer is nowhere in the band, the
+  covert product's first digit is only weakly loaded, occupancy rises and top-1
+  stability falls.
+- count-letter, and about half of multihop, fail the other way: the correct answer sits
+  at band rank 0 or 1 while the model emits something else.
+- Output probability alone cannot tell those two apart, which is what `conf_wrong` and
+  `knew_cw` are for: a confident wrong answer with the answer in the band is a
+  different fault from a confident wrong answer without it.
+
+The two failure modes want different responses. Absence means the model never had the
+value, so the fix is decomposition: split the problem and let it compute the pieces.
+Answer-in-hand means the value was there and the output stage dropped it, so the fix is
+cheap: re-read the band, or re-sample. A router that cannot distinguish them will spend
+a decomposition budget on problems that only needed a second look.
+
 ## Three candidate signatures of "flood"
 
 The term is not defined in the literature. The suite records enough to test each:
@@ -49,17 +70,30 @@ rather than wrong), `inter_rank` (the worst-loaded intermediate at the readout
 position), and `lead` (how many positions before the last the answer first reaches
 band rank 5 or better, the "does the band lead the output" test).
 
+Four columns split the readout by where the answer was and how sure the model was:
+
+| column | definition |
+|---|---|
+| `ans_rank2` | best answer rank over the last *two* positions, median. The one to read: the answer lands on the `=` or `is`, not on the final token |
+| `knew` | fraction of band-scored items with `ans_rank2` <= 3, whether or not the output was right |
+| `conf_wrong` | fraction of the group's *wrong* items whose output-layer top-1 probability is >= 0.5: confidently wrong. Blank if the group has no wrong items, or for records written before `model_top1_p` existed |
+| `knew_cw` | of those confidently-wrong items, the fraction that had the answer at band rank <= 3. High means the answer-in-hand failure; low means absence |
+
+`kurt` is no longer a table column, to keep the row inside a terminal; it is still in
+`results.jsonl`. It moved with neither tier nor outcome in run 2.
+
 ## Ladder
 
-`items.py` writes `items.jsonl`, 129 items:
+`items.py` writes `items.jsonl`, 361 items:
 
 | family | tiers | what rises |
 |---|---|---|
-| arith | 1-7 | tiers 1-4 mirror the paper's modulation tiers; 5-7 need a 2-, 3- or 4-digit product held covertly, reduced mod a small number so the answer stays one digit. A two-shot prefix of the same shape makes the answer the very next token |
-| count-letter | 1-4 | word length; count of the most frequent letter. Two-shot prefix as above, prompt ends `is ` so the digit comes next |
-| nth-letter | 1-4 | word length and index depth |
+| arith | 1-7 | tiers 1-4 mirror the paper's modulation tiers (6 items each); 5-7 need a 2-, 3- or 4-digit product held covertly, reduced mod a small number so the answer stays one digit, 30 items each. A two-shot prefix of the same shape makes the answer the very next token |
+| count-letter | 1-4 | word length. 15 words a tier, two items each: the most frequent letter and the rarest letter still in the word, which has to be found rather than noticed. Two-shot prefix as above, prompt ends `is ` so the digit comes next |
+| nth-letter | 1-4 | word length and index depth; the same 15 words a tier |
 | anagram | 1-5 | word length |
 | multihop | 1-4 | number of bridge entities, with intermediates labelled |
+| trick | 1 | nothing: one tier of 28 questions whose wrong answer is more available than the right one (Moses' ark, the bat and the ball, the capital of Australia). Raw completions with no shots, so the trap is what a shot-free model reaches for. These are the cleanest test of the answer-in-hand failure: the right answer is a fact the model has |
 
 Answers are single tokens where possible so the lens can name them. `run.py`
 re-checks against the real tokenizer and records `answer_single_token`; rank metrics
