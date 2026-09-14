@@ -67,6 +67,10 @@ renders with the model's own continuation above it. Bottom of the page: the FLOO
 section. Leave the defaults and click start; rows appear as items complete, and the
 `results.jsonl` link downloads the full file at any point.
 
+If `provision.sh` says `0 survived`, nothing on the market matches the filters right
+now. `./wait.sh` retries every two minutes, provisions on the first match, waits for
+the bootstrap, and opens the tunnel, so you can leave it running in a terminal.
+
 When you're finished:
 
 ```bash

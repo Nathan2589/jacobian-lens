@@ -12,6 +12,7 @@ Four scripts, in order:
 | `tunnel.sh` | laptop | forwards `localhost:7860` to the instance |
 | `destroy.sh` | laptop | kills the instance. This is the only thing that stops billing |
 | `flood.sh` | laptop | runs `experiments/flood` on the instance headless and pulls the results back. Optional |
+| `wait.sh` | laptop | when no offer matches: retries provision.sh on an interval, waits for bootstrap, opens the tunnel |
 | `apply.sh` | laptop | copies the local `deploy/`, `experiments/`, `jlens/` to the instance and restarts the dashboard. `--pull` does a git pull there instead |
 
 `dashboard.py` is the server: a prompt box that renders jlens' own slice
