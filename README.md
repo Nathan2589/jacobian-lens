@@ -31,6 +31,12 @@ other HuggingFace decoders adapt cleanly.
 reading out "nose" at mid layers, although the word never appears in the
 prompt.*
 
+## Staxis fork
+
+Deploy scripts are in `deploy/`, the capacity-flood suite in `experiments/flood/`,
+`ARCHITECTURE.md` explains the tooling, and `SETUP.md` gets a teammate from zero to a
+running dashboard.
+
 ## Install
 
 ```bash
