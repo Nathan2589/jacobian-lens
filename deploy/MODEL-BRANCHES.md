@@ -70,7 +70,8 @@ Allowed:
   line 313
 - `deploy/README.md`, `ARCHITECTURE.md` — the model name, the layer index, the sizes,
   the cost table
-- `deploy/tunnel.sh` — the download size in the comment at line 91
+- `deploy/tunnel.sh`, `deploy/wait.sh` — the download sizes and the setup-window
+  timings quoted to the operator
 
 Forbidden, no exceptions:
 
