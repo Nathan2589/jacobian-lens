@@ -31,6 +31,10 @@ DEPLOY_DIR="$REPO_ROOT/deploy"
 export JLENS_MODEL_ID="${JLENS_MODEL_ID:-Qwen/Qwen3.8-27B}"
 export JLENS_LENS_REPO="${JLENS_LENS_REPO:-eyes-ml/Qwen3.8-27B_jacobian-lens}"
 export JLENS_LENS_FILE="${JLENS_LENS_FILE:-Qwen3.8-27B_jacobian_lens.pt}"
+# A lens is fitted against one checkpoint revision, recorded in the lens's own
+# .meta.json as model_revision. Pin it here and an upstream re-upload cannot
+# silently put a lens and a model out of step. Empty means "whatever main is".
+export JLENS_MODEL_REVISION="${JLENS_MODEL_REVISION:-}"
 
 export JLENS_PRECISION="${JLENS_PRECISION:-nf4}"
 export HF_HOME="${HF_HOME:-/workspace/hf}"
@@ -139,9 +143,15 @@ if [ -n "${HF_TOKEN:-}" ]; then
 fi
 
 # hf download is a no-op on a warm cache, so this whole block is idempotent.
-hf download "$JLENS_MODEL_ID" --exclude '*.pth' '*.bin' '*.gguf' \
+# An `if`, not `[ -n ... ] && ...`: under `set -e` an AND-list that tests false is a
+# trap this repo has already been bitten by once.
+REV_ARGS=()
+if [ -n "$JLENS_MODEL_REVISION" ]; then
+  REV_ARGS=(--revision "$JLENS_MODEL_REVISION")
+fi
+hf download "$JLENS_MODEL_ID" "${REV_ARGS[@]}" --exclude '*.pth' '*.bin' '*.gguf' \
   || die "model download failed. Check network and that $JLENS_MODEL_ID is still public (gated repos need HF_TOKEN)."
-stage "model downloaded ($JLENS_MODEL_ID)"
+stage "model downloaded ($JLENS_MODEL_ID${JLENS_MODEL_REVISION:+ @ $JLENS_MODEL_REVISION})"
 
 hf download "$JLENS_LENS_REPO" "$JLENS_LENS_FILE" \
   || die "lens download failed. Check that $JLENS_LENS_REPO/$JLENS_LENS_FILE still exists."

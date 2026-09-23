@@ -9,9 +9,9 @@ provisioned instance is told which branch to clone. Nothing else changes.
 
 ## Why a branch and not a config file
 
-Three of the model-specific values are already environment variables
-(`JLENS_MODEL_ID`, `JLENS_LENS_REPO`, `JLENS_LENS_FILE`), and it is tempting to stop
-there. It does not hold, because the rest of what a model changes is not a value —
+Four of the model-specific values are already environment variables
+(`JLENS_MODEL_ID`, `JLENS_LENS_REPO`, `JLENS_LENS_FILE`, `JLENS_MODEL_REVISION`), and
+it is tempting to stop there. It does not hold, because the rest of what a model changes is not a value —
 it is code, sizing tables, and prose that becomes wrong:
 
 | what changes per model | where | why an env var cannot carry it |
@@ -23,6 +23,12 @@ it is code, sizing tables, and prose that becomes wrong:
 | download sizes quoted to the operator | `README.md:27-28,53`, `provision.sh:313`, `tunnel.sh:91` | 56GB/3.3GB are Qwen's; quoting them for a 12B model misleads |
 | cost table and runway | `README.md` Cost section | follows from the card the offer filter selects |
 | residual-stack layout, if unusual | `jlens/hf.py:_LAYOUTS` | a new layout entry is code |
+
+A model branch must **never** be the place a `_LAYOUTS` entry is added: layout
+resolution is shared code, and an entry that is inert for every other model still
+belongs on `main`. Check a new model's layout before renting anything — it costs
+nothing, because the module tree can be built on a meta device with no weights and no
+GPU (step 4 of "Verification before you spend anything").
 
 A model branch makes that one coherent, reviewable diff instead of a scatter of
 overrides that are individually plausible and jointly wrong.
@@ -150,9 +156,44 @@ curl -sL "https://huggingface.co/$JLENS_MODEL_ID/resolve/main/config.json" \
   | jq '.text_config | {num_hidden_layers, hidden_size, final_logit_softcapping}'
 ```
 
-`d_model` and `n_layers` must match exactly. A lens fitted against a different revision
-of the same model id is usable but is drift on top of quantisation drift — note it in the
-branch's README edit rather than leaving it for the next person to discover.
+`d_model` and `n_layers` must match exactly. `.meta.json` also carries the
+`model_revision` the lens was fitted against: put it in `JLENS_MODEL_REVISION` on the
+branch. Leaving it unset means an upstream re-upload silently puts the lens and the
+served model out of step, which is drift on top of any quantisation drift and is
+invisible from the dashboard.
+
+**4. The layout resolves.** `jlens` has to find the residual stack inside whatever class
+the config names, and for a multimodal wrapper that is not obvious. This is the one
+preflight that used to need a rented GPU, and it does not: `from_config` on a meta
+device builds the full module tree with zero weights and zero VRAM, and `_find_layout`
+only ever reads attribute names.
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # ~700MB, no CUDA
+pip install "transformers==5.10.1"                                   # what bootstrap.sh pins
+
+python - "$JLENS_MODEL_ID" <<'EOF'
+import sys, torch, transformers
+from jlens.hf import HFLensModel, _find_layout
+
+cfg = transformers.AutoConfig.from_pretrained(sys.argv[1])
+cls = getattr(transformers, cfg.architectures[0])
+with torch.device("meta"):          # builds the module tree, allocates nothing
+    model = cls(cfg)
+
+print("layout:", _find_layout(model))
+class Tok:
+    bos_token_id = None
+print(repr(HFLensModel(model, Tok())))
+EOF
+```
+
+For `google/gemma-4-12B-it` that prints `Layout(path='model.language_model', ...)` and
+`HFLensModel(Gemma4UnifiedForConditionalGeneration, n_layers=48, d_model=3840)` — the
+same `48 layers · d_model 3840` the dashboard status line shows once the real weights
+are up. If `_find_layout` raises instead, the fix is a new `Layout(...)` in
+`jlens/hf.py` **on `main`**, where it is inert for every other model — never on the
+model branch.
 
 The CPU smoke test exercises every route with no GPU and no weights:
 
@@ -172,6 +213,7 @@ Verified against the HF API on 2026-09-23.
 | `JLENS_MODEL_ID` | `Qwen/Qwen3.8-27B` | `google/gemma-4-12B-it` |
 | `JLENS_LENS_REPO` | `eyes-ml/Qwen3.8-27B_jacobian-lens` | `lamm-mit/gemma4-jacobian-lenses` |
 | `JLENS_LENS_FILE` | `Qwen3.8-27B_jacobian_lens.pt` | `gemma4-12b-it/paper/seed0.pt` |
+| `JLENS_MODEL_REVISION` | unset (tracks `main`) | `707f0a3b…` (the revision the lens was fitted against) |
 | architecture | `Qwen3ForCausalLM` | `Gemma4UnifiedForConditionalGeneration` |
 | layers / `d_model` | 64 / 5120 | 48 / 3840 |
 | true-output row | L63 | **L47** |

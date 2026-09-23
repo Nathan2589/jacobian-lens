@@ -63,6 +63,28 @@ def test_find_layout_roundtrip(layout):
     assert found == layout
 
 
+def test_find_layout_multimodal_wrapper_with_sibling_embedders():
+    """The real ``Gemma4UnifiedForConditionalGeneration`` shape.
+
+    Its ``.model`` is a wrapper holding ``language_model`` alongside
+    ``embed_vision`` / ``embed_audio`` / ``vision_embedder`` and carrying none of
+    ``layers`` / ``norm`` / ``embed_tokens`` itself, so ``Layout("model")`` must
+    fail its attribute check and fall through to ``Layout("model.language_model")``
+    rather than matching on the path alone. Verified against transformers 5.10.1
+    with the model instantiated on a meta device: resolves to
+    ``model.language_model``, 48 layers, d_model 3840.
+    """
+    layout = Layout("model.language_model")
+    mock = _make_hf_mock(layout, n_layers=4, d_model=8)
+    wrapper = mock.model
+    wrapper.embed_vision = nn.Linear(8, 8)
+    wrapper.embed_audio = nn.Linear(8, 8)
+    wrapper.vision_embedder = nn.Linear(8, 8)
+
+    assert not any(hasattr(wrapper, a) for a in ("layers", "norm", "embed_tokens"))
+    assert _find_layout(mock) == layout
+
+
 def test_find_layout_unknown_raises():
     bad = nn.Module()
     bad.something = nn.Module()
