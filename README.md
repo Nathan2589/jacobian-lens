@@ -37,6 +37,10 @@ Deploy scripts are in `deploy/`, the capacity-flood suite in `experiments/flood/
 `ARCHITECTURE.md` explains the tooling, and `SETUP.md` gets a teammate from zero to a
 running dashboard.
 
+`main` serves `Qwen/Qwen3.8-27B`. Each additional model is served from its own
+long-lived `model/<slug>` branch carrying only that model's config delta;
+`deploy/MODEL-BRANCHES.md` is the policy and the checklist.
+
 ## Install
 
 ```bash
