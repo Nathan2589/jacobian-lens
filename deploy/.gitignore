@@ -1,3 +1,5 @@
 .instance
 .known_hosts
 __pycache__/
+.proxy-instance
+.proxy-key.pem

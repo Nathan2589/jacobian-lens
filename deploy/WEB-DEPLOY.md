@@ -294,29 +294,30 @@ Note the client id and generate a client secret.
 
 ### 2. The proxy box
 
-`t4g.small`, Ubuntu 24.04 arm64, in a security group that allows **443 and 80 from
-0.0.0.0/0** (80 is required for the ACME HTTP challenge) and **22 from your own
-address only**. Nothing else. Pass `web/cloud-init.yaml` as user-data.
+```bash
+cd deploy/web
+./provision-proxy.sh --preflight                     # checks permissions, creates nothing
+./provision-proxy.sh --hostname jlens.example.com --email you@example.com
+```
+
+That creates the security group (443 + 80 from anywhere, 22 from your address
+only), a key pair written to `.proxy-key.pem`, an Elastic IP, and one `t4g.small`
+running `cloud-init.yaml` with the hostname already substituted in. It prints the
+address and the remaining steps.
+
+`--preflight` reports **every** missing permission at once and exits non-zero.
+Finding them one failed call at a time, each after something has already been
+created, is how you end up with a half-built stack and no script that will finish
+it. Create mode runs the same preflight and refuses to start if anything is
+missing.
 
 The instance boots but deliberately does **not** start serving: `authproxy.py`
 refuses to run without its config, so a box that boots with an empty secret cannot
 accidentally serve anything.
 
-### 3. Fill in the secrets
-
-```bash
-sudo editor /etc/default/jlens      # hostname, OAuth pair, session secret, repos
-sudo install -m 0640 -o root -g jlens /dev/stdin /etc/jlens/vast_api_key   # paste key
-sudo install -m 0640 -o root -g jlens ~/.ssh/id_ed25519 /etc/jlens/id_ed25519
-echo "$INSTANCE_ID" | sudo tee /etc/jlens/instance
-sudo systemctl enable --now jlens-proxy jlens-tunnel caddy
-```
-
-`JLENS_SESSION_SECRET` must be at least 32 characters; the proxy refuses to start
-otherwise. `openssl rand -hex 32`.
-
-The SSH key is the one already registered on the vast.ai account — the same key
-`tunnel.sh` uses from the laptop.
+`./provision-proxy.sh --status` shows what exists. `./destroy-proxy.sh` tears the
+whole thing down — including **releasing the Elastic IP**, which bills while
+unattached, which is the opposite of the intuition.
 
 ### 4. DNS
 
@@ -355,25 +356,50 @@ network.
 
 ## What is *not* done
 
-**Nothing has been deployed to AWS.** The role available from this machine
-(`meet-role` in account 350353785522) is read-plus-a-narrow-operator-set. Verified
-denials:
+**Nothing is deployed, and it cannot be from here.** There are three independent
+blockers, and removing the AWS one alone would not be enough.
+
+**1. No permission to create compute.** The role on this machine (`meet-role` in
+350353785522) is read plus a narrow operator set. Re-probed 2026-09-23; every
+create action is denied:
 
 | action | result |
 |---|---|
 | `ec2:RunInstances` | `UnauthorizedOperation` |
+| `ec2:CreateSecurityGroup` | `UnauthorizedOperation` |
+| `ec2:CreateKeyPair` | `UnauthorizedOperation` |
+| `ec2:AllocateAddress` | `UnauthorizedOperation` |
+| `apprunner:CreateService` | `AccessDeniedException` |
 | `route53:ListHostedZones` | `AccessDenied` |
 | `budgets:ViewBudget` | `AccessDenied` |
 | `pricing:GetProducts` | `AccessDenied` |
 
-So steps 2–4 above are a human handover. Everything that could be built and tested
-without AWS has been: the proxy, the hub, the units, the Caddyfile, the cloud-init,
+There is no second credential to fall back on: `~/.aws/` holds no `credentials`
+file, no `AWS_*` variables are set, and the only path to the account is the
+instance role. An `AdministratorAccess` SSO role exists in the account and would
+work; it is not reachable from here. `./provision-proxy.sh --preflight` prints
+this table for whatever role you run it with.
+
+**2. GitHub OAuth apps cannot be created through an API.** There is no REST
+endpoint for it — registration is a form at
+<https://github.com/settings/developers>. Without a client id and secret the proxy
+has nothing to authenticate against, so step 1 of the runbook is a human step no
+matter who holds which AWS permissions.
+
+**3. There is no vast.ai API key on this box.** `~/.config/vastai/` does not
+exist, so no GPU can be rented, so even a fully provisioned proxy would have
+nothing on the far end of its tunnel. (It would still serve `/hub/` — that half
+works with no GPU, which is the point of decision 1 — but the dashboard itself
+would show the "GPU is not reachable" page.)
+
+Everything that could be built and tested without those has been: the proxy, the
+hub, the units, the Caddyfile, the cloud-init, the provision and destroy scripts,
 and the tests, all exercised end to end locally against a stub dashboard.
 
 Also outstanding:
 
 - **The budget alarm and the DNS record** (above) need an account with those
-  permissions.
+  permissions. `provision-proxy.sh` does everything else in one command.
 - **21st.dev components were not used.** Its registry returns 403 without
   authentication and the `magic` MCP server that normally provides access failed to
   connect. The hub uses shadcn/ui-style primitives instead, which is the same
