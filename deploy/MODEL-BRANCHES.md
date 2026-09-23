@@ -81,33 +81,33 @@ Forbidden, no exceptions:
   items file on `main`, selected by env var, not a branch-local edit.
 - `pyproject.toml`, `uv.lock` — shared.
 
-## Prerequisite: `provision.sh` must be able to clone a branch
+## How the instance learns which branch to clone
 
-**Not yet true. Do this before the first model branch is provisioned.** Today
-`provision.sh` pins the default branch in three places, so a fresh instance always gets
-`main` no matter which branch you have checked out:
-
-| line | today | needs to become |
-|---|---|---|
-| 102 | `RAW_BASE=".../main/deploy"` | `.../$BRANCH/deploy` |
-| 189 | `git clone --depth 1 $REPO_URL` | `git clone --depth 1 --branch $BRANCH $REPO_URL` |
-| 191 | `.../heads/main.tar.gz` | `.../heads/$BRANCH.tar.gz` |
-
-with `BRANCH="${JLENS_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"` near the top, so the
-checked-out branch is the default and `JLENS_BRANCH` overrides it. The staleness check at
-line 107 then compares against the right branch instead of always against `main`.
-
-Until that lands, the only way to reach a model branch on an instance is after the fact:
+`provision.sh` sets `BRANCH` from the checked-out branch, with `JLENS_BRANCH` as the
+override, and threads it through the `RAW_BASE` staleness check, the `git clone` and the
+tarball fallback. So provisioning from `model/gemma-4-12b-it` clones that branch and
+serves that model; nothing else is needed.
 
 ```bash
-./apply.sh --pull      # then, on the instance: git checkout model/<slug> && re-run bootstrap
+git checkout model/gemma-4-12b-it
+./provision.sh                        # clones model/gemma-4-12b-it
+JLENS_BRANCH=main ./provision.sh      # override, without switching branches
 ```
 
-which works, but burns the download twice if the branch changes the model id.
+Two guards worth knowing about, because both failure modes cost money before they are
+visible:
+
+- **A detached HEAD refuses to provision.** There is no branch name to clone and
+  guessing `main` would rent a card sized for the wrong model.
+- **The staleness check reads `origin/$BRANCH`.** A model branch you forgot to push
+  fails at preflight, before an instance exists, rather than after the clone.
+
+The offer confirmation prints the branch next to the rate. That line is the last thing
+shown before you agree to spend, and the branch is what decides which model you are
+about to pay to download.
 
 ## Adding a model
 
-0. Confirm the prerequisite above is in place.
 1. **Find a published lens, or stop.** Fitting one for a 27B model is ~24 H100-hours;
    this is outside the budget and the reason `main` serves Qwen rather than a preference.
    Search `https://huggingface.co/api/models?search=jacobian-lens`. Read the lens's
