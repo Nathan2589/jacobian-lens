@@ -9,6 +9,7 @@ import {
   ServerCrash,
 } from "lucide-react";
 import EmptyState from "@/components/hub/EmptyState";
+import ExperimentStats from "@/components/hub/ExperimentStats";
 import InstancePanel from "@/components/hub/InstancePanel";
 import RunHistory from "@/components/hub/RunHistory";
 import StatusPill from "@/components/hub/StatusPill";
@@ -136,6 +137,16 @@ export default function App() {
               ) : (
                 <Skeleton className="h-40 w-full" />
               )}
+            </section>
+
+            <section className="flex flex-col gap-5">
+              <div>
+                <h2 className="text-xl font-semibold tracking-tight">Experiments</h2>
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  From the proxy's own log, so these hold whether or not a GPU is rented.
+                </p>
+              </div>
+              <ExperimentStats stats={runsData?.stats ?? null} />
             </section>
 
             {state ? <InstancePanel state={state} onChanged={refreshAll} /> : null}

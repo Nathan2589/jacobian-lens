@@ -33,8 +33,8 @@ export default function InstancePanel({
           <CardDescription>{state.instanceUnavailableReason}</CardDescription>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          Cost, uptime and the destroy control need a vast.ai API key on the proxy box. Everything
-          else on this page works without one.
+          Cost, uptime and the destroy control are the only things that need it — run history and
+          deployment state below are unaffected.
         </CardContent>
       </Card>
     );

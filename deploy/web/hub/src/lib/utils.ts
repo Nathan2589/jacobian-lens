@@ -9,6 +9,9 @@ export function cn(...inputs: ClassValue[]) {
  *  a bare seconds count is unreadable at both ends of that range. */
 export function humanDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "--";
+  // Slices come back in a few hundred ms. Flooring those to "0s" made every fast
+  // run look like a no-op, which is the opposite of what the number is for.
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
   const s = Math.floor(seconds);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);

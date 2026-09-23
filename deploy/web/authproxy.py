@@ -47,6 +47,16 @@ import urllib.request
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from hubapi import (
+    RunStore,
+    StaticSite,
+    StatusCache,
+    UpstreamProbe,
+    VastClient,
+    build_state,
+    summarise_request,
+)
+
 # --------------------------------------------------------------------- config
 
 SESSION_COOKIE = "jlens_session"
@@ -109,6 +119,13 @@ class Config:
             self.insecure_cookies = env.get("JLENS_INSECURE_COOKIES") == "1"
             self.model_label = env.get("JLENS_MODEL_ID", "")
             self.branch_label = env.get("JLENS_BRANCH", "")
+            here = os.path.dirname(os.path.abspath(__file__))
+            self.hub_dist = _env("JLENS_HUB_DIST", os.path.join(here, "hub", "dist"))
+            self.run_db = _env("JLENS_RUN_DB", "/var/lib/jlens/runs.db")
+            self.vast_key_file = env.get("JLENS_VAST_KEY_FILE", "/etc/jlens/vast_api_key")
+            self.vast_instance_file = env.get("JLENS_VAST_INSTANCE_FILE", "/etc/jlens/instance")
+            idle = env.get("JLENS_IDLE_KILL_S", "")
+            self.idle_kill_s = int(idle) if idle.isdigit() else None
         finally:
             os.environ = prev
 
@@ -401,6 +418,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._logout()
             elif path == f"{PREFIX}/whoami":
                 self._whoami()
+            elif path.startswith(f"{PREFIX}/api/"):
+                self._api(path)
+            elif path == "/hub" or path.startswith("/hub/"):
+                self._hub(path)
             else:
                 self._guarded_proxy()
         except Exception as exc:  # noqa: BLE001 - never leak a traceback to the web
@@ -573,6 +594,115 @@ class Handler(BaseHTTPRequestHandler):
         ).encode()
         self._send(200 if sess else 401, body, "application/json")
 
+    # ------------------------------------------------------------ hub + api
+    def _hub(self, path: str) -> None:
+        """The experiment hub bundle. Behind the same gate as everything else -
+        it shows run history, cost and an instance id, none of which should be
+        readable by a stranger."""
+        if self._session() is None:
+            self._send(302, b"", location=f"{PREFIX}/login?next={urllib.parse.quote(path)}")
+            return
+        if not self.site.present:
+            self._send(
+                503,
+                page(
+                    "The hub is not built",
+                    "<p>No bundle was found on disk, so only the dashboard itself "
+                    "is available on this box.</p>"
+                    "<p class=m>For the operator: run <code>npm ci &amp;&amp; npm run "
+                    "build</code> in <code>deploy/web/hub</code> and ship "
+                    "<code>dist/</code>, or point <code>JLENS_HUB_DIST</code> at it.</p>",
+                ),
+            )
+            return
+        target = self.site.resolve(path)
+        if target is None:
+            self._send(404, page("Not found", "<p>No such file in the hub bundle.</p>"))
+            return
+        try:
+            with open(target, "rb") as fh:
+                blob = fh.read()
+        except OSError:
+            self._send(404, page("Not found", "<p>No such file in the hub bundle.</p>"))
+            return
+        ctype, cache = StaticSite.headers_for(target)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(blob)))
+        self.send_header("Cache-Control", cache)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(blob)
+
+    def _api(self, path: str) -> None:
+        sess = self._session()
+        if sess is None:
+            self._send(401, b'{"error":"not signed in"}', "application/json",
+                       cookies=[self._clear_session()])
+            return
+
+        if path == f"{PREFIX}/api/state" and self.command in ("GET", "HEAD"):
+            state = build_state(
+                session=sess,
+                repos_label=", ".join(self.cfg.repos),
+                probe=self.probe,
+                status_cache=self.status_cache,
+                vast=self.vast,
+                idle_kill_s=self.cfg.idle_kill_s,
+            )
+            self._send(200, json.dumps(state).encode(), "application/json")
+            return
+
+        if path == f"{PREFIX}/api/runs" and self.command in ("GET", "HEAD"):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                limit = int(q.get("limit", ["50"])[0])
+            except ValueError:
+                limit = 50
+            payload = {"runs": self.runs.recent(limit), "stats": self.runs.stats()}
+            self._send(200, json.dumps(payload).encode(), "application/json")
+            return
+
+        if path == f"{PREFIX}/api/instance/destroy" and self.command == "POST":
+            self._destroy_instance(sess)
+            return
+
+        self._send(404, b'{"error":"no such endpoint"}', "application/json")
+
+    def _destroy_instance(self, sess: dict) -> None:
+        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            payload = json.loads(self.rfile.read(length) or b"{}")
+        except Exception:  # noqa: BLE001
+            payload = {}
+        wanted = str(payload.get("id") or "")
+
+        live = self.vast.snapshot()
+        actual = live.get("id")
+        # Require the caller to name the instance they think they are destroying
+        # and check it against the one that actually exists. The hub polls every
+        # ten seconds, so a stale tab could otherwise destroy a *replacement*
+        # instance provisioned after the one it was showing.
+        if not actual:
+            self._send(409, json.dumps(
+                {"destroyed": False, "detail": "no live instance to destroy"}
+            ).encode(), "application/json")
+            return
+        if wanted != actual:
+            self._send(409, json.dumps({
+                "destroyed": False,
+                "detail": f"this page is showing instance {wanted or '(none)'}, but "
+                          f"{actual} is the live one. Refresh and try again.",
+            }).encode(), "application/json")
+            return
+
+        ok, detail = self.vast.destroy(actual)
+        self.log_message("destroy %s by %s: %s", actual, sess.get("login"), detail)
+        self._send(200 if ok else 502,
+                   json.dumps({"destroyed": ok, "detail": detail}).encode(),
+                   "application/json")
+
     # ---------------------------------------------------------------- proxy
     def _guarded_proxy(self) -> None:
         sess = self._session()
@@ -613,6 +743,10 @@ class Handler(BaseHTTPRequestHandler):
         # ran a slice, and this is the header a future audit would read.
         headers["X-Jlens-User"] = str(sess.get("login", "?"))
 
+        route = urllib.parse.urlparse(self.path).path
+        run = summarise_request(self.path, body)
+        started = time.time()
+
         conn_cls = (
             http.client.HTTPSConnection if up.scheme == "https"
             else http.client.HTTPConnection
@@ -623,13 +757,48 @@ class Handler(BaseHTTPRequestHandler):
             resp = conn.getresponse()
         except (OSError, socket.timeout, http.client.HTTPException) as exc:
             self.log_message("upstream unreachable: %s", exc)
-            self._send(502, self._upstream_down_page())
+            if run:
+                self._record_run(sess, run, started, ok=False, error="GPU unreachable")
+            # The hub is the useful page when there is no GPU, so send a person
+            # who just opened the root there instead of showing them a 502 they
+            # can do nothing with. API calls still get the error they expect.
+            if route == "/" and self.command in ("GET", "HEAD"):
+                self._send(302, b"", location="/hub/")
+            else:
+                self._send(502, self._upstream_down_page())
             return
 
         try:
-            self._relay(resp)
+            if route == "/status" and resp.status == 200:
+                # Small, and the one response worth reading on the way past: it
+                # is how the hub learns the model's load state without ever
+                # making a request of its own. See hubapi's module docstring.
+                blob = resp.read()
+                self.status_cache.observe(blob)
+                self._send(200, blob, resp.getheader("Content-Type", "application/json"))
+            else:
+                self._relay(resp)
+            if run:
+                self._record_run(sess, run, started, ok=resp.status < 400,
+                                 error=None if resp.status < 400 else f"HTTP {resp.status}")
         finally:
             conn.close()
+
+    def _record_run(self, sess: dict, run: dict, started: float, *, ok: bool,
+                    error: str | None) -> None:
+        try:
+            self.runs.record(
+                at=started,
+                user=str(sess.get("login", "?")),
+                model=self.cfg.model_label or None,
+                branch=self.cfg.branch_label or None,
+                duration_ms=int((time.time() - started) * 1000),
+                ok=1 if ok else 0,
+                error=error,
+                **run,
+            )
+        except Exception as exc:  # noqa: BLE001 - history is never worth a 500
+            self.log_message("could not record run: %s", exc)
 
     def _upstream_down_page(self) -> bytes:
         return page(
@@ -680,7 +849,19 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def build_server(cfg: Config, gh: GitHub | None = None) -> ThreadingHTTPServer:
-    handler = type("BoundHandler", (Handler,), {"cfg": cfg, "gh": gh or GitHub(cfg)})
+    handler = type(
+        "BoundHandler",
+        (Handler,),
+        {
+            "cfg": cfg,
+            "gh": gh or GitHub(cfg),
+            "site": StaticSite(cfg.hub_dist),
+            "runs": RunStore(cfg.run_db),
+            "probe": UpstreamProbe(cfg.upstream),
+            "status_cache": StatusCache(),
+            "vast": VastClient(cfg.vast_key_file, cfg.vast_instance_file),
+        },
+    )
     srv = ThreadingHTTPServer((cfg.listen_host, cfg.listen_port), handler)
     srv.daemon_threads = True
     return srv

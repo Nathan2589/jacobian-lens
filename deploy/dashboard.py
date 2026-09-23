@@ -509,55 +509,118 @@ def flood_results():
 
 
 PAGE = """<!doctype html><meta charset=utf-8><title>J-lens</title>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<link rel=preconnect href="https://fonts.googleapis.com">
+<link rel=preconnect href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel=stylesheet>
 <style>
+/* Same tokens as the experiment hub on the proxy box, so moving between the two
+   does not feel like moving between two products. Inter carries the chrome and
+   the labels; JetBrains Mono is reserved for the things that are actually
+   tokens - the prompt, the continuation, the next-token table. */
+:root{
+  --bg:#0a0a0b; --panel:#0d0d0f; --panel-2:#131316; --border:#232327;
+  --fg:#fafafa; --muted:#a1a1aa; --faint:#71717a;
+  --accent:#818cf8; --accent-dim:#6366f1;
+  --danger:#fb7185; --danger-bg:#1c1114; --danger-border:#4c1d24;
+  --radius:10px;
+}
 *{box-sizing:border-box}
-body{margin:0;background:#0d0f12;color:#c9cdd4;
-     font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-header{padding:10px 14px;border-bottom:1px solid #1e2229;display:flex;gap:14px;align-items:baseline}
-h1{font-size:13px;margin:0;color:#e6e9ee;font-weight:600;letter-spacing:.04em}
-#detail{color:#6b727d;font-size:11px}
-main{padding:14px;display:flex;flex-direction:column;gap:10px}
-textarea{width:100%;height:64px;resize:vertical;background:#12151a;color:#e6e9ee;
-         border:1px solid #262b33;border-radius:3px;padding:8px;font:inherit}
-textarea:focus,input:focus{outline:none;border-color:#3d6ea8}
-.row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
-label{color:#6b727d;font-size:11px}
-input[type=number]{width:66px;background:#12151a;color:#e6e9ee;border:1px solid #262b33;
-                   border-radius:3px;padding:3px 5px;font:inherit}
-button{background:#1b2531;color:#cfe0f5;border:1px solid #33465e;border-radius:3px;
-       padding:5px 14px;font:inherit;cursor:pointer}
-button:hover:enabled{background:#22303f}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);
+     font:15px/1.6 Inter,ui-sans-serif,system-ui,sans-serif;
+     -webkit-font-smoothing:antialiased}
+code,kbd,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+header{position:sticky;top:0;z-index:20;display:flex;gap:14px;align-items:center;
+       padding:0 24px;height:56px;border-bottom:1px solid var(--border);
+       background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(8px)}
+h1{font-size:14px;margin:0;font-weight:600;letter-spacing:-.01em}
+h1 span{color:var(--muted);font-weight:400}
+#detail{color:var(--faint);font-size:13px;min-width:0;overflow:hidden;
+        text-overflow:ellipsis;white-space:nowrap}
+header .spacer{flex:1}
+.hublink{color:var(--muted);font-size:13px;text-decoration:none;padding:6px 10px;
+         border-radius:6px;white-space:nowrap}
+.hublink:hover{background:var(--panel-2);color:var(--fg)}
+
+main{max-width:1200px;margin:0 auto;padding:32px 24px 64px;
+     display:flex;flex-direction:column;gap:24px}
+
+textarea{width:100%;min-height:96px;resize:vertical;background:var(--panel);
+         color:var(--fg);border:1px solid var(--border);border-radius:var(--radius);
+         padding:14px 16px;font:14px/1.7 "JetBrains Mono",ui-monospace,monospace}
+textarea::placeholder{color:var(--faint)}
+textarea:focus,input:focus{outline:none;border-color:var(--accent-dim);
+         box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-dim) 22%,transparent)}
+
+/* Controls were a single cramped inline row. Labels now sit above their input so
+   the eye can scan the names without reading through the values. */
+.row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+#examples{gap:8px}
+.controls{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;
+          padding:16px;background:var(--panel);border:1px solid var(--border);
+          border-radius:var(--radius)}
+label{display:flex;flex-direction:column;gap:6px;color:var(--faint);font-size:11px;
+      font-weight:500;letter-spacing:.04em;text-transform:uppercase}
+input[type=number]{width:84px;background:var(--panel-2);color:var(--fg);
+                   border:1px solid var(--border);border-radius:7px;padding:7px 9px;
+                   font:14px/1.2 "JetBrains Mono",ui-monospace,monospace;
+                   font-variant-numeric:tabular-nums}
+
+button{background:var(--accent-dim);color:#fff;border:1px solid transparent;
+       border-radius:7px;padding:8px 18px;font:500 14px/1.2 Inter,sans-serif;
+       cursor:pointer;transition:background .12s ease}
+button:hover:enabled{background:var(--accent)}
 button:disabled{opacity:.4;cursor:default}
-.ex{background:none;border:none;color:#6f8db3;padding:0;text-align:left;font-size:11px;
-    cursor:pointer;text-decoration:underline dotted}
-.ex:hover{color:#9dc0e8}
-#stats,#flood_stats{color:#6b727d;font-size:11px;min-height:1.5em}
-#err,#flood_err{white-space:pre-wrap;color:#e08a7a;background:#1a1214;border:1px solid #3d2226;
-     border-radius:3px;padding:8px;font-size:11px;display:none}
-#output{display:none;background:#12151a;border:1px solid #262b33;border-radius:3px;padding:8px 10px;
-        white-space:pre-wrap;word-break:break-word}
-#output .ctx{color:#6b727d}
-#output .gen{color:#e6e9ee;background:#1b2531}
-#next{color:#6b727d;font-size:11px;margin-top:6px}
-#next b{color:#cfe0f5;font-weight:600}
-iframe{width:100%;height:78vh;border:1px solid #262b33;border-radius:3px;background:#fff;display:none}
-section{border-top:1px solid #1e2229;margin-top:6px;padding-top:12px;
-        display:flex;flex-direction:column;gap:8px}
-h2{font-size:12px;margin:0;color:#e6e9ee;font-weight:600;letter-spacing:.04em}
-a{color:#6f8db3;font-size:11px}
-.cap{color:#6b727d;font-size:11px;margin:8px 0 2px}
-canvas{display:block}
+.ex{background:var(--panel);border:1px solid var(--border);color:var(--muted);
+    padding:6px 11px;font:13px/1.3 Inter,sans-serif;text-align:left;border-radius:999px;
+    text-decoration:none}
+.ex:hover{color:var(--fg);border-color:var(--accent-dim);background:var(--panel-2)}
+
+#stats,#flood_stats{color:var(--faint);font-size:13px;min-height:1.5em;
+                    font-variant-numeric:tabular-nums}
+#err,#flood_err{white-space:pre-wrap;color:var(--danger);background:var(--danger-bg);
+     border:1px solid var(--danger-border);border-radius:var(--radius);padding:14px 16px;
+     font:13px/1.6 "JetBrains Mono",ui-monospace,monospace;display:none}
+#output{display:none;background:var(--panel);border:1px solid var(--border);
+        border-radius:var(--radius);padding:16px 18px;white-space:pre-wrap;
+        word-break:break-word;font:14px/1.75 "JetBrains Mono",ui-monospace,monospace}
+#output .ctx{color:var(--faint)}
+#output .gen{color:var(--fg);background:color-mix(in srgb,var(--accent-dim) 22%,transparent);
+             border-radius:3px;padding:1px 2px}
+#next{color:var(--faint);font-size:13px;margin-top:14px;padding-top:12px;
+      border-top:1px solid var(--border);line-height:2}
+#next b{color:var(--accent);font-weight:500}
+
+iframe{width:100%;height:78vh;border:1px solid var(--border);border-radius:var(--radius);
+       background:#fff;display:none}
+
+section{border-top:1px solid var(--border);margin-top:16px;padding-top:28px;
+        display:flex;flex-direction:column;gap:16px}
+h2{font-size:16px;margin:0;font-weight:600;letter-spacing:-.01em}
+a{color:var(--accent)}
+.cap{color:var(--faint);font-size:11px;font-weight:500;letter-spacing:.04em;
+     text-transform:uppercase;margin:16px 0 6px}
+canvas{display:block;max-width:100%}
 #flood_vis{display:none}
-.sw{display:inline-block;width:9px;height:9px;margin-right:4px;vertical-align:middle}
-#tip{position:fixed;display:none;z-index:9;pointer-events:none;max-width:340px;
-     white-space:pre-wrap;background:#12151a;border:1px solid #33465e;border-radius:3px;
-     padding:5px 7px;font-size:11px;color:#c9cdd4}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;
+    vertical-align:middle}
+#tip{position:fixed;display:none;z-index:40;pointer-events:none;max-width:360px;
+     white-space:pre-wrap;background:var(--panel-2);border:1px solid var(--border);
+     border-radius:7px;padding:8px 10px;font:12px/1.5 "JetBrains Mono",ui-monospace,monospace;
+     color:var(--fg);box-shadow:0 8px 24px rgba(0,0,0,.5)}
 </style>
-<header><h1>J-LENS</h1><span id=detail>connecting...</span></header>
+<header>
+  <h1>J-lens <span>&middot; slice viewer</span></h1>
+  <span id=detail>connecting...</span>
+  <span class=spacer></span>
+  <a class=hublink href="/hub/">Experiment hub &rarr;</a>
+</header>
 <main>
 <textarea id=prompt spellcheck=false placeholder="prompt"></textarea>
-<div class=row id=examples></div>
-<div class=row>
+<div class="row" id=examples></div>
+<div class="row controls">
   <label>max_seq_len <input type=number id=max_seq_len value=256 min=16 max=512></label>
   <label>layer_stride <input type=number id=layer_stride value=2 min=1 max=8></label>
   <label>top_n <input type=number id=top_n value=8 min=1 max=12></label>
@@ -571,7 +634,7 @@ canvas{display:block}
 <iframe id=out></iframe>
 <section>
   <h2>FLOOD SUITE</h2>
-  <div class=row>
+  <div class="row controls">
     <label>band_lo <input type=number id=band_lo value=24></label>
     <label>band_hi <input type=number id=band_hi value=58></label>
     <label>positions <input type=number id=positions value=6 min=1 max=8></label>

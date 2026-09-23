@@ -48,6 +48,15 @@ export interface RunRecord {
   error: string | null;
 }
 
+export interface RunStats {
+  total: number;
+  ok: number;
+  failed: number;
+  last24h: number;
+  lastAt: number | null;
+  medianMs: number | null;
+}
+
 class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -69,7 +78,7 @@ async function get<T>(path: string): Promise<T> {
 
 export const api = {
   state: () => get<HubState>("/_jlens/api/state"),
-  runs: (limit = 50) => get<{ runs: RunRecord[] }>(`/_jlens/api/runs?limit=${limit}`),
+  runs: (limit = 50) => get<{ runs: RunRecord[]; stats: RunStats }>(`/_jlens/api/runs?limit=${limit}`),
   destroyInstance: async (id: string) => {
     const res = await fetch("/_jlens/api/instance/destroy", {
       method: "POST",
