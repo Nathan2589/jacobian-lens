@@ -35,6 +35,12 @@ budget here. A lens for `Qwen/Qwen3.8-27B` is already published at
 `eyes-ml/Qwen3.8-27B_jacobian-lens`, so we apply a published lens rather than fit our
 own. The app log prints the lens's own `n_prompts` when it loads.
 
+This page describes `main`, which serves Qwen. **Serving a different model is a
+different git branch, not a different set of environment variables** — the VRAM floors,
+the offer filter, the flood band defaults and the `L63` convention all move with the
+model. [`MODEL-BRANCHES.md`](MODEL-BRANCHES.md) is the policy: what a model branch may
+change, how it stays rebased on `main`, and the checklist for adding one.
+
 **The honest caveat.** That lens was fitted against the model in bf16. We serve the
 model quantized to NF4 so it fits on a 48GB card. Reading a quantized model through a
 bf16-fitted lens introduces drift, and nothing here corrects for it. Treat the lens
