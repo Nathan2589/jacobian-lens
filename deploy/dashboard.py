@@ -833,8 +833,16 @@ function floodSetup() {
   const b = $('cv_band'), c = $('cv_lead'), h = PADT + ftotal * ROWH + 6;
   b.width = GUT + fcols.band.length * fcw.band + 10; b.height = h;
   c.width = GUT + fcols.lead.length * fcw.lead + 4; c.height = h;
+  // A lens fitted on sparse source_layers gives a band whose columns are evenly
+  // spaced in pixels but NOT in model depth, so neighbouring columns are not
+  // neighbouring layers. Say so, or the heatmap reads as a contiguous stack.
+  // Inert for a densely fitted lens: the note only appears when layers are skipped.
+  const bd = fcols.band;
+  const dense = bd[bd.length - 1] - bd[0] + 1 === bd.length;
   $('cap_band').textContent = 'answer rank in the band, best of last two positions · L'
-    + fcols.band[0] + '..L' + fcols.band[fcols.band.length - 1]
+    + bd[0] + '..L' + bd[bd.length - 1]
+    + (dense ? '' : ' (' + bd.length + ' fitted layers, unevenly spaced'
+        + ' - columns are not consecutive layers; hover for the layer)')
     + ' · right edge: green correct, amber later, red wrong';
   $('cap_lead').textContent = 'when the answer becomes readable · positions '
     + fcols.lead[0] + '..' + fcols.lead[fcols.lead.length - 1];

@@ -50,6 +50,10 @@ class Layout:
 #: text decoder has all three of ``layers``/``norm``/``embed`` wins. Covers
 #: Llama / Qwen / Mistral / Gemma / OLMo / StableLM (the modern HF default),
 #: their multimodal-wrapper variants, plus Phi, GPT-2, and GPT-NeoX.
+#:
+#: The ordering matters: a multimodal wrapper resolves ``Layout("model")`` as a
+#: *path* and is rejected only by the attribute check, so ``Layout("model")`` must
+#: come first and ``Layout("model.language_model")`` must follow it.
 _LAYOUTS: tuple[Layout, ...] = (
     Layout("model"),
     Layout("model.language_model"),
