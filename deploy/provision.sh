@@ -11,6 +11,10 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STATE_FILE="$DEPLOY_DIR/.instance"
 KNOWN_HOSTS="$DEPLOY_DIR/.known_hosts"   # shared with tunnel.sh
 REPO_URL="https://github.com/Nathan2589/jacobian-lens"
+# Which branch the instance clones. One model per branch (deploy/MODEL-BRANCHES.md),
+# so the checked-out branch is the default: provisioning from model/gemma-4-12b-it
+# should not silently rent a card sized for main's Qwen config.
+BRANCH="${JLENS_BRANCH:-$(git -C "$DEPLOY_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)}"
 IMAGE="${JLENS_IMAGE:-vastai/pytorch:2.9.1-cu128-cuda-12.9-mini-py311-2026-08-21}"
 DISK_GB=120
 SSH_KEY="${JLENS_SSH_KEY:-$HOME/.ssh/id_ed25519}"
@@ -25,6 +29,12 @@ die() { echo "FATAL: $*" >&2; exit 1; }
 
 command -v jq >/dev/null || die "jq not installed"
 command -v curl >/dev/null || die "curl not installed"
+
+# A detached HEAD has no branch name to clone, and guessing "main" here would rent a
+# card sized for the wrong model. Make the operator say which branch they meant.
+if [ "$BRANCH" = "HEAD" ]; then
+  die "detached HEAD: no branch to clone. Check out a branch, or set JLENS_BRANCH=<branch>."
+fi
 
 KEY="${VAST_API_KEY:-$(cat "$HOME/.config/vastai/vast_api_key")}"
 KEY="${KEY//[$'\n\r']/}"
@@ -99,12 +109,12 @@ rm -f "$STATE_FILE"
 
 # The instance clones from GitHub, so the deploy scripts must already be pushed
 # and the repo must be public. Catching this here saves a guaranteed-failed rental.
-RAW_BASE="${REPO_URL/github.com/raw.githubusercontent.com}/main/deploy"
+RAW_BASE="${REPO_URL/github.com/raw.githubusercontent.com}/$BRANCH/deploy"
 STALE=0
 for f in bootstrap.sh dashboard.py; do
   REMOTE="$(curl -sfL "$RAW_BASE/$f")" \
-    || die "deploy/$f is not readable at $RAW_BASE/$f - commit and push deploy/ (and make sure the fork is public) before provisioning."
-  [ "$REMOTE" = "$(cat "$DEPLOY_DIR/$f")" ] || { echo "warning: local deploy/$f differs from origin/main." >&2; STALE=1; }
+    || die "deploy/$f is not readable at $RAW_BASE/$f - push branch '$BRANCH' with deploy/ in it (and make sure the fork is public) before provisioning."
+  [ "$REMOTE" = "$(cat "$DEPLOY_DIR/$f")" ] || { echo "warning: local deploy/$f differs from origin/$BRANCH." >&2; STALE=1; }
 done
 if [ "$STALE" = 1 ] && [ "$ASSUME_YES" -ne 1 ]; then
   die "the instance runs the PUSHED version, so those local edits would not apply. Push them, or rerun with --yes."
@@ -165,6 +175,7 @@ RUNWAY="$(jq -n --argjson c "$CREDIT" --argjson d "$DPH" '(($c / $d) * 10 | floo
 
 echo
 jq -r '"chosen: offer \(.id)  \(.gpu) \(.vram)GB VRAM  $\(.dph)/hr  \(.geo)"' <<<"$CHOSEN"
+echo "branch: $BRANCH  (the instance clones this; it decides which model is served)"
 echo "runway: ~${RUNWAY} hours of continuous uptime against \$${CREDIT} of credit"
 echo "note:   the \$/hr above already includes ${DISK_GB}GB of storage. Storage bills whether"
 echo "        the instance is running or merely stopped - only destroy.sh stops the burn."
@@ -186,9 +197,9 @@ mkdir -p /var/log/portal
 {
   echo \"[\$(date -Is)] onstart begin\"
   rm -rf /workspace/jacobian-lens
-  git clone --depth 1 $REPO_URL /workspace/jacobian-lens || {
+  git clone --depth 1 --branch $BRANCH $REPO_URL /workspace/jacobian-lens || {
     mkdir -p /workspace/jacobian-lens
-    curl -sfL $REPO_URL/archive/refs/heads/main.tar.gz | tar xz -C /workspace/jacobian-lens --strip-components=1
+    curl -sfL $REPO_URL/archive/refs/heads/$BRANCH.tar.gz | tar xz -C /workspace/jacobian-lens --strip-components=1
   }
 } >> /var/log/portal/jlens-setup.log 2>&1
 bash /workspace/jacobian-lens/deploy/bootstrap.sh
