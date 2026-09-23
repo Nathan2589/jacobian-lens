@@ -308,10 +308,33 @@ def test_state_reports_absent_gpu_without_pretending_to_know_more(server):
     assert "vast.ai API key" in state["instanceUnavailableReason"]
 
 
-def test_runs_start_empty_and_are_scoped_to_the_signed_in_user(server):
+def test_runs_start_empty_with_a_zeroed_summary(server):
     s, cfg, _ = server
     status, _, body = s.get("/_jlens/api/runs", cookie=session_cookie(cfg))
-    assert status == 200 and json.loads(body) == {"runs": []}
+    assert status == 200
+    payload = json.loads(body)
+    assert payload["runs"] == []
+    # The hub renders these tiles before any run exists, so an empty log must
+    # produce zeros and nulls rather than a missing key.
+    assert payload["stats"] == {
+        "total": 0, "ok": 0, "failed": 0, "last24h": 0,
+        "lastAt": None, "medianMs": None,
+    }
+
+
+def test_run_store_stats_summarise_the_log(tmp_path):
+    store = hubapi.RunStore(str(tmp_path / "r.db"))
+    now = time.time()
+    for i, (ok, dur) in enumerate([(1, 100), (1, 300), (1, 200), (0, None)]):
+        store.record(at=now - i, user="u", kind="slice", prompt="p", ok=ok,
+                     duration_ms=dur, error=None if ok else "boom")
+    store.record(at=now - 200_000, user="u", kind="slice", prompt="old", ok=1,
+                 duration_ms=50)
+    stats = store.stats()
+    assert stats["total"] == 5 and stats["ok"] == 4 and stats["failed"] == 1
+    assert stats["last24h"] == 4  # the 200_000s-old one is outside the window
+    # Median of the successful durations (50, 100, 200, 300), not the mean.
+    assert stats["medianMs"] == 200
 
 
 def test_hub_requires_a_session(server):
