@@ -15,6 +15,13 @@ Four scripts, in order:
 | `wait.sh` | laptop | when no offer matches: retries provision.sh on an interval, waits for bootstrap, opens the tunnel |
 | `apply.sh` | laptop | copies the local `deploy/`, `experiments/`, `jlens/` to the instance and restarts the dashboard. `--pull` does a git pull there instead |
 
+**Reaching it over the web instead of the tunnel** — on an EC2 box, behind GitHub
+OAuth restricted to repo collaborators, with an experiment hub that outlives the
+rented instance — is [`WEB-DEPLOY.md`](WEB-DEPLOY.md). It keeps everything below
+intact: the GPU is still rented on vast.ai on demand (EC2 GPUs are 4-5x the price),
+uvicorn still binds `127.0.0.1`, and `destroy.sh` is still the thing that stops the
+billing. The tunnel moves off your laptop and onto the always-on box.
+
 `dashboard.py` is the server: a prompt box that renders jlens' own slice
 visualisation. Above the slice it shows the model's own output: a greedy
 continuation of `gen_tokens` tokens (default 32, `0` to skip) decoded from the same

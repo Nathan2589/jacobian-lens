@@ -1,0 +1,89 @@
+#cloud-config
+# user-data for the always-on J-lens proxy box (t4g.small, arm64, Ubuntu 24.04).
+#
+# It installs Caddy, the proxy and the tunnel agent, and leaves every secret
+# blank. The box will NOT serve anything until /etc/default/jlens is filled in -
+# authproxy refuses to start without its config, which is deliberate: a proxy
+# that boots with a default session secret is worse than one that does not boot.
+
+package_update: true
+packages:
+  - python3
+  - jq
+  - curl
+  - git
+  - debian-keyring
+  - debian-archive-keyring
+  - apt-transport-https
+
+users:
+  - name: jlens
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/jlens
+
+write_files:
+  - path: /etc/default/jlens
+    permissions: "0640"
+    owner: root:jlens
+    content: |
+      # ---- required: the proxy refuses to start until these are set ----
+      JLENS_HOSTNAME=jlens.example.com
+      JLENS_ACME_EMAIL=you@example.com
+      JLENS_PUBLIC_URL=https://jlens.example.com
+      JLENS_OAUTH_CLIENT_ID=
+      JLENS_OAUTH_CLIENT_SECRET=
+      # Server-side credential for the collaborator check. A fine-grained PAT
+      # with Repository permissions -> Administration: Read is enough, and is
+      # the minimum that returns collaborators. NOT the visitor's token.
+      JLENS_GITHUB_TOKEN=
+      # openssl rand -hex 32
+      JLENS_SESSION_SECRET=
+
+      # ---- authorization ----
+      # Measured 2026-09-23: jacobian-lens has one collaborator (Nathan2589);
+      # Diantic has two (Nathan2589, juniorokafor). Gating on the public fork
+      # alone locks the teammate out. Comma-separated, any-of.
+      JLENS_AUTH_REPOS=Nathan2589/jacobian-lens
+
+      # ---- optional ----
+      JLENS_SESSION_TTL_S=28800
+      JLENS_UPSTREAM=http://127.0.0.1:7860
+      JLENS_LISTEN_HOST=127.0.0.1
+      JLENS_LISTEN_PORT=7870
+      JLENS_RUN_DB=/var/lib/jlens/runs.db
+      JLENS_HUB_DIST=/opt/jlens/deploy/web/hub/dist
+      JLENS_VAST_KEY_FILE=/etc/jlens/vast_api_key
+      JLENS_VAST_INSTANCE_FILE=/etc/jlens/instance
+      JLENS_SSH_KEY=/etc/jlens/id_ed25519
+
+      # Labels shown in the hub. Set these to whatever branch was deployed.
+      JLENS_BRANCH=main
+      JLENS_MODEL_ID=Qwen/Qwen3.8-27B
+      JLENS_LENS_REPO=eyes-ml/Qwen3.8-27B_jacobian-lens
+      JLENS_PRECISION=nf4
+      JLENS_IDLE_KILL_S=7200
+
+runcmd:
+  - install -d -o jlens -g jlens -m 0750 /var/lib/jlens
+  - install -d -o root  -g jlens -m 0750 /etc/jlens
+  - install -d -m 0755 /var/log/caddy
+  - git clone --branch main https://github.com/Nathan2589/jacobian-lens.git /opt/jlens
+  - chmod +x /opt/jlens/deploy/web/tunnel-agent.sh
+  - cp /opt/jlens/deploy/web/systemd/*.service /etc/systemd/system/
+  # Caddy from its official apt repo (the distro package lags on ACME fixes).
+  - curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt | tee /etc/apt/sources.list.d/caddy-stable.list
+  - apt-get update && apt-get install -y caddy
+  - cp /opt/jlens/deploy/web/Caddyfile /etc/caddy/Caddyfile
+  - systemctl daemon-reload
+  # Intentionally NOT started here. Fill in /etc/default/jlens first, then:
+  #   systemctl enable --now jlens-proxy jlens-tunnel caddy
+  - systemctl enable jlens-proxy jlens-tunnel
+
+final_message: |
+  J-lens proxy box booted. It is not serving yet, by design.
+  1. Edit /etc/default/jlens (secrets, hostname, JLENS_AUTH_REPOS).
+  2. Put the vast.ai key in /etc/jlens/vast_api_key and the SSH key in
+     /etc/jlens/id_ed25519 (chown root:jlens, chmod 0640).
+  3. systemctl enable --now jlens-proxy jlens-tunnel caddy

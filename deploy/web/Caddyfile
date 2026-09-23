@@ -1,0 +1,47 @@
+# TLS for the J-lens hub. Caddy, not an ALB: an Application Load Balancer is
+# ~$16/month before it carries a single request, which is more than the t4g.small
+# it would sit in front of. Caddy gets a free ACME certificate and renews it.
+#
+# Install to /etc/caddy/Caddyfile and set JLENS_HOSTNAME in /etc/default/jlens.
+{
+	# Fill this in, or ACME failures are silent.
+	email {$JLENS_ACME_EMAIL}
+}
+
+{$JLENS_HOSTNAME} {
+	encode zstd gzip
+
+	# Health check terminates HERE. It must never be proxied to the dashboard:
+	# the GPU instance reaps itself after JLENS_IDLE_KILL_S with no dashboard
+	# traffic, and a health check on a timer looks exactly like a person using
+	# it. Pointing a monitor at "/" instead of this path would quietly disable
+	# the only thing that stops a rented GPU billing forever.
+	handle /_jlens/health {
+		reverse_proxy 127.0.0.1:7870
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:7870 {
+			# The flood suite streams server-sent events for the length of a
+			# run. Without this Caddy buffers the whole stream and the page
+			# sits blank for minutes and then renders everything at once.
+			flush_interval -1
+			transport http {
+				read_timeout 15m
+			}
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Frame-Options "SAMEORIGIN"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	log {
+		output file /var/log/caddy/jlens.log
+		format console
+	}
+}

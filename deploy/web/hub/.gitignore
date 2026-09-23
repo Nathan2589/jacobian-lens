@@ -1,0 +1,7 @@
+node_modules/
+
+# The repo root ignores dist/ for Python build artefacts. The hub bundle is not
+# one: it is committed on purpose, because the proxy box has no node toolchain
+# and installing one at boot to produce ~180kB of static assets is worse than
+# carrying them. Rebuild and commit together (see deploy/WEB-DEPLOY.md).
+!/dist/

@@ -1,0 +1,25 @@
+[Unit]
+Description=SSH tunnel from the proxy box to the rented GPU dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jlens
+Group=jlens
+EnvironmentFile=/etc/default/jlens
+ExecStart=/opt/jlens/deploy/web/tunnel-agent.sh
+# The GPU is rented on demand and destroyed when idle, so "no instance" is the
+# normal resting state, not a failure. Restart forever, slowly, and let the agent
+# itself decide how long to wait.
+Restart=always
+RestartSec=15
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ProtectKernelTunables=true
+
+[Install]
+WantedBy=multi-user.target

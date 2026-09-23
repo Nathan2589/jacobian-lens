@@ -1,0 +1,28 @@
+[Unit]
+Description=J-lens auth proxy (GitHub OAuth gate in front of the dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jlens
+Group=jlens
+WorkingDirectory=/opt/jlens/deploy/web
+EnvironmentFile=/etc/default/jlens
+ExecStart=/usr/bin/python3 /opt/jlens/deploy/web/authproxy.py
+Restart=always
+RestartSec=3
+
+# The proxy reads secrets and writes one database. It needs nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/jlens
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target
